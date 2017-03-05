@@ -13,6 +13,7 @@
 		22FF3D091E67A45B00F2E70C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 22FF3D081E67A45B00F2E70C /* Assets.xcassets */; };
 		22FF3D0C1E67A45B00F2E70C /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 22FF3D0A1E67A45B00F2E70C /* Main.storyboard */; };
 		22FF3D141E67C4FA00F2E70C /* DatabseConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FF3D131E67C4FA00F2E70C /* DatabseConnector.swift */; };
+		22FF3D171E6A93BD00F2E70C /* Contacts.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22FF3D161E6A93BD00F2E70C /* Contacts.framework */; };
 		5712AE821556085F18EF22F7 /* Pods_MessageProxy.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F7878B32424FC2532D0B8A41 /* Pods_MessageProxy.framework */; };
 /* End PBXBuildFile section */
 
@@ -26,6 +27,7 @@
 		22FF3D0D1E67A45B00F2E70C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		22FF3D131E67C4FA00F2E70C /* DatabseConnector.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DatabseConnector.swift; sourceTree = "<group>"; };
 		22FF3D151E6A912100F2E70C /* MessageProxy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MessageProxy.entitlements; sourceTree = "<group>"; };
+		22FF3D161E6A93BD00F2E70C /* Contacts.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Contacts.framework; path = System/Library/Frameworks/Contacts.framework; sourceTree = SDKROOT; };
 		6B75ED1454DC6594AC1EDEE7 /* Pods-MessageProxy.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MessageProxy.debug.xcconfig"; path = "Pods/Target Support Files/Pods-MessageProxy/Pods-MessageProxy.debug.xcconfig"; sourceTree = "<group>"; };
 		F220595122DC9C931A0EEF75 /* Pods-MessageProxy.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MessageProxy.release.xcconfig"; path = "Pods/Target Support Files/Pods-MessageProxy/Pods-MessageProxy.release.xcconfig"; sourceTree = "<group>"; };
 		F7878B32424FC2532D0B8A41 /* Pods_MessageProxy.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_MessageProxy.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -36,6 +38,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				22FF3D171E6A93BD00F2E70C /* Contacts.framework in Frameworks */,
 				5712AE821556085F18EF22F7 /* Pods_MessageProxy.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -88,6 +91,7 @@
 		D1CD67925859108D9944D61A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				22FF3D161E6A93BD00F2E70C /* Contacts.framework */,
 				F7878B32424FC2532D0B8A41 /* Pods_MessageProxy.framework */,
 			);
 			name = Frameworks;

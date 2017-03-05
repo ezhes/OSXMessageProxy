@@ -46,10 +46,36 @@ class ViewController: NSViewController {
 			apiServer?.addHandler(forMethod: "GET", path: "/conversations", request: GCDWebServerRequest.self, processBlock: {
 				request in
 				weak var weakConnector = connector;
-				
-				return GCDWebServerDataResponse(html:weakConnector?.getJSONConversations())
+				let response = GCDWebServerDataResponse(html:weakConnector?.getJSONConversations())!
+                response.isGZipContentEncodingEnabled = true
+				return response
 			})
 			
+            apiServer?.addHandler(forMethod: "GET", path: "/attachment", request: GCDWebServerRequest.self, processBlock: {
+                request in
+                weak var weakConnector = connector;
+                let attachmentIDString = request?.query["id"] as? String
+                
+                if (attachmentIDString != nil) {
+                    let attachment = weakConnector?.getAttachmentInfo(forAttachmentID: Int(attachmentIDString!)!)
+                    //Check that we have an attachment
+                    if (attachment?.pathToFile == nil) {
+                        return GCDWebServerDataResponse(html:"Couldn't find attachment<br>\(request?.query)")
+                    }
+                    let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath.replacingOccurrences(of: " ", with: "%20")
+                    print("file://\(filePath)")
+                    let fileURL = URL(string: "file://\(filePath)")!//URL(string: "file://" + (attachment!.pathToFile! as NSString).expandingTildeInPath)!
+                    let data = NSData(contentsOf: fileURL) as Data!
+                    //We do, build our response
+                    let response = GCDWebServerDataResponse(data: data, contentType: attachment!.mimeType)!
+                    response.isGZipContentEncodingEnabled = true
+                    return response
+                }else {
+                    return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(request?.query)")
+                }
+            })
+            
+            
 			//Setup our send post.
 			//Paramaters
 			//Your post data needs the following values: participants and message. Each are strings. Participants is a comma seperate string of the recipients as you'd type them into the new message field in Message.app
@@ -66,6 +92,7 @@ class ViewController: NSViewController {
                     //Do we have the correct paramaters? (are they set)
                     if (participiants != nil && message != nil) {
                         //Yes! Ask our controller to send a message
+                        print("Sending \(participiants!) :: \(message!) ")
                         weakConnector?.sendMessage(toRecipients: participiants!, withMessage: message!)
                         return GCDWebServerDataResponse(html:"OK: \(participiants!) :: \(message!)")
                     }
@@ -78,7 +105,7 @@ class ViewController: NSViewController {
             //Setup our get messages post.
             //Paramaters
             //Your post data needs the following values: conversationID
-            //curl http://127.0.0.1:8735/messages -XPOST -d "conversationID=7"
+            //curl http://127.0.0.1:8735/messages -XPOST -d "conversationID=37"
             apiServer?.addHandler(forMethod: "POST", path: "/messages", request: GCDWebServerURLEncodedFormRequest.self, processBlock: {
                 request in
                 weak var weakConnector = connector;
@@ -90,7 +117,9 @@ class ViewController: NSViewController {
                     //Do we have the correct paramaters? (are they set)
                     if (conversationID != nil) {
                         //Yes! Get our data from the controller
-                        return GCDWebServerDataResponse(html:weakConnector?.getJSONMessages(forChatID: Int(conversationID!)!))
+                        let response = GCDWebServerDataResponse(html:weakConnector?.getJSONMessages(forChatID: Int(conversationID!)!))!
+                        response.isGZipContentEncodingEnabled = true
+                        return response
                     }
                     
                 }
