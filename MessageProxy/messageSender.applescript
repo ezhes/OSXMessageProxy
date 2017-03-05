@@ -5,17 +5,17 @@ on run {msgText, targetPhoneNum}
 	tell application "System Events"
 		keystroke "n" using {command down}
 		delay 0.8
-		repeat with personString in my theSplit(targetPhoneNum, ",")
+		repeat with personString in my theSplit(targetPhoneNum, ", ")
 			keystroke personString
+			delay 2.5
+			keystroke ","
 			delay 0.5
-			keystroke return
-			delay 0.1
 		end repeat
 		-- Jump to our message field with another return
 		keystroke return
-		delay 0.2
+		delay 0.5
 		keystroke msgText
-		delay 0.2
+		delay 0.5
 		keystroke return
 	end tell
 end run
