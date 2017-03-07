@@ -14,6 +14,7 @@ import GCDWebServer
 
 class ViewController: NSViewController {
     
+    @IBOutlet var logView: NSTextView!
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
@@ -31,7 +32,8 @@ class ViewController: NSViewController {
 	
 	func setupWebserver() {
 		do {
-			let connector = try DatabaseConstructor(datebaseLocation: "/Users/Salman/Library/Messages/chat.db");
+            let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
+			let connector = try DatabaseConstructor(datebaseLocation: messagesDatabaseLocation);
 			
             //Set log level warning to stop console spam
             GCDWebServer.setLogLevel(3)
@@ -39,13 +41,22 @@ class ViewController: NSViewController {
             //Create our server
 			let apiServer = GCDWebServer()
             apiServer?.addDefaultHandler(forMethod: "GET", request: GCDWebServerRequest.self, processBlock: {request in
-				return GCDWebServerDataResponse(html:"Access Denied")
+				return GCDWebServerDataResponse(html:"") //Don't respond. Nothing is really hard to work off of. Security through obscurity???
 				
 			})
 			
+            apiServer?.addHandler(forMethod: "GET", path: "/isUp", request: GCDWebServerRequest.self, processBlock: {
+                request in
+                weak var weakSelf = self
+                weakSelf?.uiPrint("Client checked in")
+                return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(request?.query)")
+            })
+            
 			apiServer?.addHandler(forMethod: "GET", path: "/conversations", request: GCDWebServerRequest.self, processBlock: {
 				request in
 				weak var weakConnector = connector;
+                weak var weakSelf = self
+                weakSelf?.uiPrint("\(request!.remoteAddressString!) request conversations")
 				let response = GCDWebServerDataResponse(html:weakConnector?.getJSONConversations())!
                 response.isGZipContentEncodingEnabled = true
 				return response
@@ -54,6 +65,7 @@ class ViewController: NSViewController {
             apiServer?.addHandler(forMethod: "GET", path: "/attachment", request: GCDWebServerRequest.self, processBlock: {
                 request in
                 weak var weakConnector = connector;
+                weak var weakSelf = self
                 let attachmentIDString = request?.query["id"] as? String
                 
                 if (attachmentIDString != nil) {
@@ -63,7 +75,7 @@ class ViewController: NSViewController {
                         return GCDWebServerDataResponse(html:"Couldn't find attachment<br>\(request?.query)")
                     }
                     let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath.replacingOccurrences(of: " ", with: "%20")
-                    print("file://\(filePath)")
+                    weakSelf?.uiPrint("\(request!.remoteAddressString!) -> serving attachment file://\(filePath)")
                     let fileURL = URL(string: "file://\(filePath)")!//URL(string: "file://" + (attachment!.pathToFile! as NSString).expandingTildeInPath)!
                     let data = NSData(contentsOf: fileURL) as Data!
                     //We do, build our response
@@ -83,7 +95,7 @@ class ViewController: NSViewController {
 			apiServer?.addHandler(forMethod: "POST", path: "/send", request: GCDWebServerURLEncodedFormRequest.self, processBlock: {
 				request in
 				weak var weakConnector = connector;
-                
+                weak var weakSelf = self
                 //Grab our post data parser as a form
 				let formRequest = request as! GCDWebServerURLEncodedFormRequest
 				if (formRequest.arguments != nil) {
@@ -92,7 +104,7 @@ class ViewController: NSViewController {
                     //Do we have the correct paramaters? (are they set)
                     if (participiants != nil && message != nil) {
                         //Yes! Ask our controller to send a message
-                        print("Sending \(participiants!) :: \(message!) ")
+                        weakSelf?.uiPrint("\(request!.remoteAddressString!) -> sending \(participiants!) :: \(message!) ")
                         weakConnector?.sendMessage(toRecipients: participiants!, withMessage: message!)
                         return GCDWebServerDataResponse(html:"OK: \(participiants!) :: \(message!)")
                     }
@@ -109,6 +121,8 @@ class ViewController: NSViewController {
             apiServer?.addHandler(forMethod: "POST", path: "/messages", request: GCDWebServerURLEncodedFormRequest.self, processBlock: {
                 request in
                 weak var weakConnector = connector;
+                weak var weakSelf = self
+                weakSelf?.uiPrint("\(request!.remoteAddressString!) request for messages")
                 
                 //Grab our post data parser as a form
                 let formRequest = request as! GCDWebServerURLEncodedFormRequest
@@ -116,6 +130,7 @@ class ViewController: NSViewController {
                     let conversationID = formRequest.arguments["conversationID"] as? String
                     //Do we have the correct paramaters? (are they set)
                     if (conversationID != nil) {
+                        weakSelf?.uiPrint("\t-->Sending messages for ID \(conversationID!)")
                         //Yes! Get our data from the controller
                         let response = GCDWebServerDataResponse(html:weakConnector?.getJSONMessages(forChatID: Int(conversationID!)!))!
                         response.isGZipContentEncodingEnabled = true
@@ -129,21 +144,34 @@ class ViewController: NSViewController {
 			
 			apiServer?.start(withPort: 8735, bonjourName: "iMessage Proxy")
             if apiServer?.isRunning == true {
-                print("Ready at \(apiServer!.serverURL!)")
+                uiPrint("Ready at \(apiServer!.serverURL!)")
             }else {
-                print("Couldn't start the webserver! Failing permenantly")
+                uiPrint("Couldn't start the webserver! Failing permenantly")
             }
             
             
 			
 			
 		} catch  {
-			print("Database error!")
+			uiPrint("Database error!")
 		}
 		
 		
 	}
-    
+    public func uiPrint(_ content: Any) {
+        print(content)
+        
+        logView.append(string: "[\(Date())] \(content)\n")
+    }
     
 }
+
+extension NSTextView {
+    func append(string: String) {
+        //Update the text log on screen. We have to do this weird mutable editing because the nice way causes it to crash when you go too fast
+        self.textStorage?.mutableString.append(string)
+        self.scrollToEndOfDocument(nil)
+    }
+}
+
 
