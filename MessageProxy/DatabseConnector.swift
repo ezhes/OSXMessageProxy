@@ -24,13 +24,13 @@ class DatabaseConstructor: NSObject {
         //Prepare our timer
         //Setup our lastFoundMessage
         let lastMessageROWIDRows = try databaseQueue?.inDatabase { db -> [Row]? in
-            let rows = try Row.fetchAll(db, "SELECT ROWID from message ORDER BY date DESC LIMIT 1") //Get our last message and only its rowid
+            let rows = try Row.fetchAll(db, "SELECT date from message ORDER BY date DESC LIMIT 1") //Get our last message and only its rowid
             return rows;
         }
         //Do we have exactly the rows we wanted?
         if lastMessageROWIDRows?.count == 1 {
             //Grab the only row's ROWID and store it as our last reference
-            lastMessageROWID = lastMessageROWIDRows![0].value(named: "ROWID")
+            lastMessageDate = lastMessageROWIDRows![0].value(named: "date")
             //Now we are ready to fire our timer
             _ = Timer.scheduledTimer(timeInterval: 2, target: self, selector: #selector(self.checkForNewMessages), userInfo: nil, repeats: true);
         }else {
@@ -340,18 +340,18 @@ class DatabaseConstructor: NSObject {
     
     
     //Holds a reference to the last rowid of the message we've seen. Used to know when we have to notify about new messages.
-    var lastMessageROWID = 0;
+    var lastMessageDate = 0;
     /// Called by a global timer which checks if we have any new messages
     func checkForNewMessages() {
         do {
             let messageNewMessageRows = try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from message WHERE ROWID > \(lastMessageROWID) ORDER BY date DESC LIMIT 25") //select all our messages since our last notification round
+                let rows = try Row.fetchAll(db, "SELECT * from message WHERE date > \(lastMessageDate) ORDER BY date LIMIT 25") //select all our messages since our last notification round
                 return rows;
             }
             
             //Do we have any updates? We don't want to enumerate if we have nothing
             if messageNewMessageRows != nil && messageNewMessageRows!.count > 0 {
-                print("Got \(messageNewMessageRows!.count) new messagess")
+                print("Got \(messageNewMessageRows!.count) new messagess. Current last is \(lastMessageDate)")
                 //Cache a lookup handle table because we need it now
                 let handleTable = getHandlerConversationDictionary()
             
@@ -359,17 +359,18 @@ class DatabaseConstructor: NSObject {
                 try messageNewMessageRows?.forEach({
                     newMessage in
                     //Mark all as sent pre-emptively incase we throw
-                    lastMessageROWID = newMessage.value(named: "ROWID")
+                    lastMessageDate = newMessage.value(named: "date")
                     //Store our message handle id because we use it often
-                    let handleID = newMessage.value(named: "handle_id") as? Int
+                    let handleID = newMessage.value(named: "handle_id") as? Int64
                     //Make sure we didn't send our message. Notifying about a SENT message is stupid
-                    if (newMessage.value(named: "is_sent") == 0 && handleID != nil && handleID != 0) {
+                    
+                    if (newMessage.value(named: "is_from_me") == 0) {
                         print("Sending...")
                         
-                        let senderName = getHumanName(handle_id: handleID!)
+                        let senderName = getHumanName(handle_id: Int(handleID!))
                         
                         //Build our notification sender
-                        let postDictionary = ["value1":senderName,"value2":newMessage.value(named: "text"),"value3":handleTable[handleID!]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed)]
+                        let postDictionary = ["value1":senderName,"value2":newMessage.value(named: "text"),"value3":handleTable[Int(handleID!)]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed)]
                         let postData = try JSONSerialization.data(withJSONObject: postDictionary, options: JSONSerialization.WritingOptions.prettyPrinted)
                         //Now let's build our request
                         let request = NSMutableURLRequest(url: URL(string: "https://maker.ifttt.com/trigger/imessageRecieved/with/key/3HEnQUJ1WuSZcOAKYW9XJ")!)
