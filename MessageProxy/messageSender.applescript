@@ -8,7 +8,7 @@ on run {msgText, targetPhoneNum}
 		delay 0.8
 		repeat with personString in my theSplit(targetPhoneNum, ", ")
 			keystroke personString
-			delay 2.5
+			delay 2.0
 			keystroke ","
 			delay 0.5
 		end repeat
