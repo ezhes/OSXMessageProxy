@@ -81,6 +81,7 @@ class ViewController: NSViewController {
                     //We do, build our response
                     let response = GCDWebServerDataResponse(data: data, contentType: attachment!.mimeType)!
                     response.isGZipContentEncodingEnabled = true
+                    print("--> sending attachment")
                     return response
                 }else {
                     return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(request?.query)")
@@ -161,13 +162,17 @@ class ViewController: NSViewController {
     public func uiPrint(_ content: Any) {
         print(content)
         
-        logView.append(string: "[\(Date())] \(content)\n")
+        //logView.append(string: "[\(Date())] \(content)\n")
     }
     
 }
 
 extension NSTextView {
-    func append(string: String) {
+
+    /// DO NOT USE
+    /// THIS CRASHES ALL THE FUCKING TIME
+    /// - Parameter string: <#string description#>
+    func append(_ string: String) {
         //Update the text log on screen. We have to do this weird mutable editing because the nice way causes it to crash when you go too fast
         self.textStorage?.mutableString.append(string)
         self.scrollToEndOfDocument(nil)

@@ -1,21 +1,3 @@
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// When a type adopts both DatabaseValueConvertible and
 /// StatementColumnConvertible, it is granted with faster access to the SQLite
 /// database values.
@@ -77,7 +59,7 @@ extension DatabaseValueConvertible where Self: StatementColumnConvertible {
         let sqliteStatement = statement.sqliteStatement
         return statement.fetchCursor(arguments: arguments) {
             if sqlite3_column_type(sqliteStatement, columnIndex) == SQLITE_NULL {
-                throw DatabaseError(code: SQLITE_ERROR, message: "could not convert database value NULL to \(Self.self)", sql: statement.sql, arguments: arguments)
+                throw DatabaseError(resultCode: .SQLITE_ERROR, message: "could not convert database value NULL to \(Self.self)", sql: statement.sql, arguments: arguments)
             }
             return Self.init(sqliteStatement: sqliteStatement, index: columnIndex)
         }

@@ -32,6 +32,7 @@ public struct FTS3TokenizerDescriptor {
     /// See https://www.sqlite.org/fts3.html#tokenizer
     public static let porter = FTS3TokenizerDescriptor("porter")
     
+    #if USING_CUSTOMSQLITE || USING_SQLCIPHER
     /// The "unicode61" tokenizer.
     ///
     ///     db.create(virtualTable: "books", using: FTS4()) { t in
@@ -48,6 +49,33 @@ public struct FTS3TokenizerDescriptor {
     ///
     /// See https://www.sqlite.org/fts3.html#tokenizer
     public static func unicode61(removeDiacritics: Bool = true, separators: Set<Character> = [], tokenCharacters: Set<Character> = []) -> FTS3TokenizerDescriptor {
+        return _unicode61(removeDiacritics: removeDiacritics, separators: separators, tokenCharacters: tokenCharacters)
+    }
+    #else
+    /// The "unicode61" tokenizer.
+    ///
+    ///     db.create(virtualTable: "books", using: FTS4()) { t in
+    ///         t.tokenizer = .unicode61()
+    ///     }
+    ///
+    /// - parameters:
+    ///     - removeDiacritics: If true (the default), then SQLite will strip
+    ///       diacritics from latin characters.
+    ///     - separators: Unless empty (the default), SQLite will consider these
+    ///       characters as token separators.
+    ///     - tokenCharacters: Unless empty (the default), SQLite will consider
+    ///       these characters as token characters.
+    ///
+    /// See https://www.sqlite.org/fts3.html#tokenizer
+    @available(iOS 8.2, OSX 10.10, *)
+    public static func unicode61(removeDiacritics: Bool = true, separators: Set<Character> = [], tokenCharacters: Set<Character> = []) -> FTS3TokenizerDescriptor {
+        // query_only pragma was added in SQLite 3.8.0 http://www.sqlite.org/changes.html#version_3_8_0
+        // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
+        return _unicode61(removeDiacritics: removeDiacritics, separators: separators, tokenCharacters: tokenCharacters)
+    }
+    #endif
+    
+    private static func _unicode61(removeDiacritics: Bool = true, separators: Set<Character> = [], tokenCharacters: Set<Character> = []) -> FTS3TokenizerDescriptor {
         var arguments: [String] = []
         if !removeDiacritics {
             arguments.append("remove_diacritics=0")
@@ -63,10 +91,23 @@ public struct FTS3TokenizerDescriptor {
         return FTS3TokenizerDescriptor("unicode61", arguments: arguments)
     }
     
+    #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+    func tokenize(_ string: String) -> [String] {
+        return _tokenize(string)
+    }
+    #else
+    @available(iOS 8.2, OSX 10.10, *)
+    func tokenize(_ string: String) -> [String] {
+        return _tokenize(string)
+    }
+    #endif
+
     /// Returns an array of tokens found in the string argument.
     ///
     ///     FTS3TokenizerDescriptor.simple.tokenize("foo bar") // ["foo", "bar"]
-    func tokenize(_ string: String) -> [String] {
+    private func _tokenize(_ string: String) -> [String] {
+        // fts3tokenize was introduced in SQLite 3.7.17 https://www.sqlite.org/changes.html#version_3_7_17
+        // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
         return DatabaseQueue().inDatabase { db in
             var tokenizerChunks: [String] = []
             tokenizerChunks.append(name)

@@ -24,13 +24,14 @@ public struct FTS3Pattern {
             }
         } catch let error as DatabaseError {
             // Remove private SQL & arguments from the thrown error
-            throw DatabaseError(code: error.code, message: error.message, sql: nil, arguments: nil)
+            throw DatabaseError(resultCode: error.extendedResultCode, message: error.message, sql: nil, arguments: nil)
         }
         
         // Pattern is valid
         self.rawPattern = rawPattern
     }
     
+    #if USING_CUSTOMSQLITE || USING_SQLCIPHER
     /// Creates a pattern that matches any token found in the input string;
     /// returns nil if no pattern could be built.
     ///
@@ -69,6 +70,49 @@ public struct FTS3Pattern {
         guard !tokens.isEmpty else { return nil }
         try? self.init(rawPattern: "\"" + tokens.joined(separator: " ") + "\"")
     }
+    #else
+    /// Creates a pattern that matches any token found in the input string;
+    /// returns nil if no pattern could be built.
+    ///
+    ///     FTS3Pattern(matchingAnyTokenIn: "")        // nil
+    ///     FTS3Pattern(matchingAnyTokenIn: "foo bar") // foo OR bar
+    ///
+    /// - parameter string: The string to turn into an FTS3 pattern
+    @available(iOS 8.2, OSX 10.10, *)
+    public init?(matchingAnyTokenIn string: String) {
+        let tokens = FTS3TokenizerDescriptor.simple.tokenize(string)
+        guard !tokens.isEmpty else { return nil }
+        try? self.init(rawPattern: tokens.joined(separator: " OR "))
+    }
+    
+    /// Creates a pattern that matches all tokens found in the input string;
+    /// returns nil if no pattern could be built.
+    ///
+    ///     FTS3Pattern(matchingAllTokensIn: "")        // nil
+    ///     FTS3Pattern(matchingAllTokensIn: "foo bar") // foo bar
+    ///
+    /// - parameter string: The string to turn into an FTS3 pattern
+    @available(iOS 8.2, OSX 10.10, *)
+    public init?(matchingAllTokensIn string: String) {
+        let tokens = FTS3TokenizerDescriptor.simple.tokenize(string)
+        guard !tokens.isEmpty else { return nil }
+        try? self.init(rawPattern: tokens.joined(separator: " "))
+    }
+    
+    /// Creates a pattern that matches a contiguous string; returns nil if no
+    /// pattern could be built.
+    ///
+    ///     FTS3Pattern(matchingPhrase: "")        // nil
+    ///     FTS3Pattern(matchingPhrase: "foo bar") // "foo bar"
+    ///
+    /// - parameter string: The string to turn into an FTS3 pattern
+    @available(iOS 8.2, OSX 10.10, *)
+    public init?(matchingPhrase string: String) {
+        let tokens = FTS3TokenizerDescriptor.simple.tokenize(string)
+        guard !tokens.isEmpty else { return nil }
+        try? self.init(rawPattern: "\"" + tokens.joined(separator: " ") + "\"")
+    }
+    #endif
 }
 
 extension FTS3Pattern : DatabaseValueConvertible {

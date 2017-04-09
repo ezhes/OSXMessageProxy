@@ -1,23 +1,5 @@
 import Foundation
 
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// A raw SQLite statement, suitable for the SQLite C API.
 public typealias SQLiteStatement = OpaquePointer
 
@@ -62,12 +44,12 @@ public class Statement {
         }
         
         guard code == SQLITE_OK else {
-            throw DatabaseError(code: code, message: database.lastErrorMessage, sql: sql)
+            throw DatabaseError(resultCode: code, message: database.lastErrorMessage, sql: sql)
         }
         
         guard remainingSQL.isEmpty else {
             sqlite3_finalize(sqliteStatement)
-            throw DatabaseError(code: SQLITE_MISUSE, message: "Multiple statements found. To execute multiple statements, use Database.execute() instead.", sql: sql, arguments: nil)
+            throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "Multiple statements found. To execute multiple statements, use Database.execute() instead.", sql: sql, arguments: nil)
         }
         
         self.database = database
@@ -86,7 +68,7 @@ public class Statement {
         // throwing any error.
         let code = sqlite3_reset(sqliteStatement)
         guard code == SQLITE_OK else {
-            fatalError(DatabaseError(code: code, message: database.lastErrorMessage, sql: sql).description)
+            fatalError(DatabaseError(resultCode: code, message: database.lastErrorMessage, sql: sql).description)
         }
     }
     
@@ -183,7 +165,7 @@ public class Statement {
         // It looks like sqlite3_bind_xxx() functions do not access the file system.
         // They should thus succeed, unless a GRDB bug: there is no point throwing any error.
         guard code == SQLITE_OK else {
-            fatalError(DatabaseError(code: code, message: database.lastErrorMessage, sql: sql).description)
+            fatalError(DatabaseError(resultCode: code, message: database.lastErrorMessage, sql: sql).description)
         }
     }
     
@@ -194,7 +176,7 @@ public class Statement {
         // no point throwing any error.
         let code = sqlite3_clear_bindings(sqliteStatement)
         guard code == SQLITE_OK else {
-            fatalError(DatabaseError(code: code, message: database.lastErrorMessage, sql: sql).description)
+            fatalError(DatabaseError(resultCode: code, message: database.lastErrorMessage, sql: sql).description)
         }
     }
 
@@ -220,7 +202,8 @@ public class Statement {
 ///         let moreThanThirtyCount = try Int.fetchOne(statement, arguments: [30])!
 ///     }
 public final class SelectStatement : Statement {
-    private(set) var selectionInfo: SelectionInfo
+    /// Information about the table and columns read by a SelectStatement
+    public private(set) var selectionInfo: SelectionInfo
     
     init(database: Database, sql: String) throws {
         self.selectionInfo = SelectionInfo()
@@ -270,8 +253,8 @@ public final class SelectStatement : Statement {
         return fetchCursor(arguments: arguments) { }
     }
 
-    /// Allows inspection of table and columns read by a SelectStatement
-    struct SelectionInfo {
+    /// Information about the table and columns read by a SelectStatement
+    public struct SelectionInfo : CustomStringConvertible {
         mutating func insert(column: String, ofTable table: String) {
             if selection[table] != nil {
                 selection[table]!.insert(column)
@@ -280,15 +263,40 @@ public final class SelectStatement : Statement {
             }
         }
         
+        /// If true, selection is unknown
+        let isUnknown: Bool
+        
+        /// Relevant iff isUnknown is false
         func contains(anyColumnFrom table: String) -> Bool {
             return selection.index(forKey: table) != nil
         }
         
+        /// Relevant iff isUnknown is false
         func contains(anyColumnIn columns: Set<String>, from table: String) -> Bool {
             return !(selection[table]?.isDisjoint(with: columns) ?? true)
         }
         
+        init() {
+            self.init(isUnknown: false)
+        }
+        
+        static func unknown() -> SelectionInfo {
+            return self.init(isUnknown: true)
+        }
+        
         private var selection: [String: Set<String>] = [:]  // [TableName: Set<ColumnName>]
+        
+        private init(isUnknown: Bool) {
+            self.isUnknown = isUnknown
+        }
+        
+        /// A textual representation of `self`.
+        public var description: String {
+            return selection
+                .sorted { $0.key < $1.key }
+                .map { (table, columns) in "\(table)(\(columns.sorted().joined(separator: ", ")))" }
+                .joined(separator: ", ")
+        }
     }
 }
 
@@ -325,9 +333,9 @@ public final class DatabaseCursor<Element> : Cursor {
             return nil
         case SQLITE_ROW:
             return try element()
-        case let errorCode:
+        case let code:
             statement.database.selectStatementDidFail(statement)
-            throw DatabaseError(code: errorCode, message: statement.database.lastErrorMessage, sql: statement.sql, arguments: statement.arguments)
+            throw DatabaseError(resultCode: code, message: statement.database.lastErrorMessage, sql: statement.sql, arguments: statement.arguments)
         }
     }
 }
@@ -426,13 +434,13 @@ public final class UpdateStatement : Statement {
                 database.updateStatementDidExecute(self)
                 return
                 
-            case let errorCode:
+            case let code:
                 // Failure
                 //
                 // Let database rethrow eventual transaction observer error:
                 try database.updateStatementDidFail(self)
                 
-                throw DatabaseError(code: errorCode, message: database.lastErrorMessage, sql: sql, arguments: self.arguments) // Error uses self.arguments, not the optional arguments parameter.
+                throw DatabaseError(resultCode: code, message: database.lastErrorMessage, sql: sql, arguments: self.arguments) // Error uses self.arguments, not the optional arguments parameter.
             }
         }
     }
@@ -778,20 +786,20 @@ public struct StatementArguments {
                 if let databaseValue = namedValues[argumentName] {
                     return databaseValue
                 } else if values.isEmpty {
-                    throw DatabaseError(code: SQLITE_MISUSE, message: "missing statement argument: \(argumentName)", sql: statement.sql, arguments: nil)
+                    throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "missing statement argument: \(argumentName)", sql: statement.sql, arguments: nil)
                 } else {
                     return values.removeFirst()
                 }
             } else {
                 if values.isEmpty {
-                    throw DatabaseError(code: SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)", sql: statement.sql, arguments: nil)
+                    throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)", sql: statement.sql, arguments: nil)
                 } else {
                     return values.removeFirst()
                 }
             }
         }
         if !allowingRemainingValues && !values.isEmpty {
-            throw DatabaseError(code: SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)", sql: statement.sql, arguments: nil)
+            throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)", sql: statement.sql, arguments: nil)
         }
         return bindings
     }

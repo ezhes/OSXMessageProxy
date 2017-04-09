@@ -1,23 +1,5 @@
 import Foundation
 
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 // MARK: - DatabaseValue
 
 /// DatabaseValue is the intermediate type between SQLite and your values.
@@ -26,7 +8,7 @@ import Foundation
 public struct DatabaseValue {
     
     /// An SQLite storage (NULL, INTEGER, REAL, TEXT, BLOB).
-    public enum Storage {
+    public enum Storage : Equatable {
         /// The NULL storage class.
         case null
         
@@ -41,6 +23,38 @@ public struct DatabaseValue {
         
         /// The BLOB storage class, wrapping Data.
         case blob(Data)
+        
+        /// Returns Int64, Double, String, Data or nil.
+        public var value: DatabaseValueConvertible? {
+            switch self {
+            case .null:
+                return nil
+            case .int64(let int64):
+                return int64
+            case .double(let double):
+                return double
+            case .string(let string):
+                return string
+            case .blob(let data):
+                return data
+            }
+        }
+        
+        /// Return true if the storages are identical.
+        ///
+        /// Unlike DatabaseValue equality that considers the integer 1 to be
+        /// equal to the 1.0 double (as SQLite does), int64 and double storages
+        /// are never equal.
+        public static func == (_ lhs: Storage, _ rhs: Storage) -> Bool {
+            switch (lhs, rhs) {
+            case (.null, .null): return true
+            case (.int64(let lhs), .int64(let rhs)): return lhs == rhs
+            case (.double(let lhs), .double(let rhs)): return lhs == rhs
+            case (.string(let lhs), .string(let rhs)): return lhs == rhs
+            case (.blob(let lhs), .blob(let rhs)): return lhs == rhs
+            default: return false
+            }
+        }
     }
     
     /// The SQLite storage
@@ -70,57 +84,6 @@ public struct DatabaseValue {
         default:
             return false
         }
-    }
-    
-    /// Returns Int64, Double, String, Data or nil.
-    public func value() -> DatabaseValueConvertible? {
-        switch storage {
-        case .null:
-            return nil
-        case .int64(let int64):
-            return int64
-        case .double(let double):
-            return double
-        case .string(let string):
-            return string
-        case .blob(let data):
-            return data
-        }
-    }
-    
-    /// Returns the value, converted to the requested type.
-    ///
-    /// If the SQLite value is NULL, the result is nil. Otherwise the SQLite
-    /// value is converted to the requested type `Value`. Should this conversion
-    /// fail, a fatal error is raised.
-    ///
-    /// If this fatal error is unacceptable to you, use
-    /// DatabaseValueConvertible.fromDatabaseValue() method.
-    ///
-    /// - returns: An optional *Value*.
-    public func value<Value: DatabaseValueConvertible>() -> Value? {
-        if let value = Value.fromDatabaseValue(self) {
-            return value
-        }
-        guard isNull else {
-            // Programmer error
-            fatalError("could not convert database value \(self) to \(Value.self)")
-        }
-        return nil
-    }
-    
-    /// Returns the value, converted to the requested type.
-    ///
-    /// This method crashes if the SQLite value is NULL, or if the SQLite value
-    /// can not be converted to `Value`.
-    ///
-    /// - returns: A *Value*.
-    public func value<Value: DatabaseValueConvertible>() -> Value {
-        guard let value = Value.fromDatabaseValue(self) else {
-            // Programmer error
-            fatalError("could not convert database value \(self) to \(Value.self)")
-        }
-        return value
     }
     
     
@@ -209,6 +172,11 @@ extension DatabaseValue : Hashable {
     /// not lose information:
     ///
     ///     1.databaseValue == 1.0.databaseValue   // true
+    ///
+    /// For a comparison that distinguishes integer and doubles, compare
+    /// storages instead:
+    ///
+    ///     1.databaseValue.storage == 1.0.databaseValue.storage // false
     public static func ==(lhs: DatabaseValue, rhs: DatabaseValue) -> Bool {
         switch (lhs.storage, rhs.storage) {
         case (.null, .null):
@@ -234,10 +202,7 @@ extension DatabaseValue : Hashable {
 /// Returns true if i and d hold exactly the same value, and if converting one
 /// type to the other does not lose any information.
 private func int64EqualDouble(_ i: Int64, _ d: Double) -> Bool {
-    // TODO: wait for https://github.com/apple/swift-evolution/blob/master/proposals/0080-failable-numeric-initializers.md
-    // Bug: https://bugs.swift.org/browse/SR-1491
-    // 
-    // For current implementation, see http://stackoverflow.com/questions/33719132/how-to-test-for-lossless-double-integer-conversion/33784296#33784296
+    // See http://stackoverflow.com/questions/33719132/how-to-test-for-lossless-double-integer-conversion/33784296#33784296
     return (d >= Double(Int64.min))
         && (d < Double(Int64.max))
         && (round(d) == d)

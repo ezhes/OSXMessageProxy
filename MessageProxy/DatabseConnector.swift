@@ -185,6 +185,7 @@ class DatabaseConstructor: NSObject {
                 //We have an attachment!
                 messageDictionaryRepresentation.setValue(true, forKey: "has_attachments")
                 messageDictionaryRepresentation.setValue(attachmentID, forKey: "attachment_id")
+                messageDictionaryRepresentation.setValue(message.value(named: "uti"), forKey: "uti")
             }else {
                 messageDictionaryRepresentation.setValue(false, forKey: "has_attachments")
             }

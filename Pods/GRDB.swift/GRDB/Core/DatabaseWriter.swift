@@ -92,6 +92,10 @@ public protocol DatabaseWriter : DatabaseReader {
     ///
     /// This method is *not* reentrant.
     func readFromCurrentState(_ block: @escaping (Database) -> Void) throws
+    
+    /// Returns an optional database connection. If not nil, the caller is
+    /// executing on a serialized writer dispatch queue.
+    var availableDatabaseConnection: Database? { get }
 }
 
 extension DatabaseWriter {
@@ -106,15 +110,11 @@ extension DatabaseWriter {
     ///
     /// - parameter transactionObserver: A transaction observer.
     public func add(transactionObserver: TransactionObserver) {
-        write { db in
-            db.add(transactionObserver: transactionObserver)
-        }
+        write { $0.add(transactionObserver: transactionObserver) }
     }
     
     /// Remove a transaction observer.
     public func remove(transactionObserver: TransactionObserver) {
-        write { db in
-            db.remove(transactionObserver: transactionObserver)
-        }
+        write { $0.remove(transactionObserver: transactionObserver) }
     }
 }
