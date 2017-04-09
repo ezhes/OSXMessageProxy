@@ -2,6 +2,7 @@ on run {msgText, targetPhoneNum}
 	tell application "Messages"
 		activate
 	end tell
+    set the clipboard to msgText
 	tell application "System Events"
 		keystroke "n" using {command down}
 		delay 0.8
@@ -14,7 +15,8 @@ on run {msgText, targetPhoneNum}
 		-- Jump to our message field with another return
 		keystroke return
 		delay 0.5
-		keystroke msgText
+        keystroke "v" using command down
+        keystroke return
 		delay 0.5
 		keystroke return
 	end tell
