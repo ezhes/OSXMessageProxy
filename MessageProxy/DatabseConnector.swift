@@ -334,35 +334,43 @@ class DatabaseConstructor: NSObject {
         let newMessage = SendableMessage()
         newMessage.messageContents = withMessage
         newMessage.recipients = toRecipients;
-        messageQueue.append(newMessage)
+        //..and send it. This is the user friendly way and we need to make a packet to send it
+        sendMessage(message: newMessage)
+        
+    }
+    
+    
+    /// Send a message object safely. This is safe to use for resending messages
+    ///
+    /// - Parameter message: The SendableMessage to send
+    func sendMessage(message:SendableMessage) {
+        messageQueue.append(message)
         DispatchQueue.global().async {
             [unowned self ] in
             //Really shitty way to do this. I don't want to learn how to do block queueing and so we're just going to make threads for each message. fuck em if they send too fast.
             //We are waiting until the first queue object is equal to our goal
-            while (self.messageQueue.first?.messageContents != withMessage) {
+            while (self.messageQueue.first?.messageContents != message.messageContents) {
                 Thread.sleep(forTimeInterval: 1)
             }
-            print("[Message Send] Message \(withMessage) has reached the front of the queue")
+            print("[Message Send] Message \(self.messageQueue[0].messageContents!) has reached the front of the queue")
             //We're last in queue. We should also be safe in terms of thread safety
             //Send our message
             let task = Process()
             task.launchPath = "/usr/bin/osascript"
             //Set up the arguments!
-            task.arguments = [Bundle.main.path(forResource: "messageSender", ofType: "scpt")!,withMessage,toRecipients]
+            task.arguments = [Bundle.main.path(forResource: "messageSender", ofType: "scpt")!,self.messageQueue[0].messageContents!,self.messageQueue[0].recipients!]
             task.launch()
             //Wait a bit before we check that it's been sent
-            sleep(15)
-            
             var messageHasBeenSent = false
             //We'll check 5 times that our message has sent
-            for _ in 0...4 {
+            for _ in 0...12 {
                 do {
                     let _ = try self.databaseQueue?.inDatabase { db -> [Row]? in
-                        let rows = try Row.fetchAll(db, "SELECT message.text from message where message.is_sent == 1 ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent
+                        let rows = try Row.fetchAll(db, "SELECT message.text from message where message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\" ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent
                         rows.forEach({
                             message in
                             //Check if we're in our sent messages
-                            if (message.value(named: "text") == withMessage) {
+                            if (message.value(named: "text") == self.messageQueue[0].messageContents!) {
                                 //Yes, flag as done
                                 messageHasBeenSent = true
                             }
@@ -390,7 +398,7 @@ class DatabaseConstructor: NSObject {
                 if (self.messageQueue[0].sendFailures >= 4) {
                     //We've failed too many times, notify that the message didn't send
                     DispatchQueue.main.async {
-                        self.sendNotification(title: "Send failure!", contents: withMessage, appURL: toRecipients)
+                        self.sendNotification(title: "Failed to send message", contents: self.messageQueue[0].messageContents!, appURL: self.messageQueue[0].recipients!)
                     }
                     print("[Message Send] Permentally failed to send message. Notifying. Dequeded message")
                     self.messageQueue.remove(at: 0)
@@ -398,13 +406,20 @@ class DatabaseConstructor: NSObject {
                 }else {
                     print("[Message Send] Message send failed. Trying \(self.messageQueue[0].sendFailures)/3")
                     self.messageQueue.remove(at: 0) //we need to remove here since when we recall we actually add another in the queue so ???
-                    //Recursively retry. This is fine since we quit after three tries
-                    self.sendMessage(toRecipients: toRecipients, withMessage: withMessage)
+                    //Recursively retry. We have to call this one instead because if we re create we lose .sendFailures
+                    self.sendMessage(message: message)
                 }
             }
         }
     }
     
+    
+    /// Send a push notification to the device
+    ///
+    /// - Parameters:
+    ///   - title: The notification source
+    ///   - contents: The message contents
+    ///   - appURL: The call back url
     func sendNotification(title:String,contents:String,appURL:String) {
         do {
             let postDictionary = ["value1":title,"value2":contents,"value3":appURL]
