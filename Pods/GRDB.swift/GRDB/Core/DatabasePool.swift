@@ -1,23 +1,5 @@
 import Foundation
 
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 #if os(iOS)
     import UIKit
 #endif
@@ -127,13 +109,13 @@ public final class DatabasePool {
     ///
     /// - parameter kind: The checkpoint mode (default passive)
     public func checkpoint(_ kind: Database.CheckpointMode = .passive) throws {
-        try writer.sync { db in
+        try write { db in
             // TODO: read https://www.sqlite.org/c3ref/wal_checkpoint_v2.html and
             // check whether we need a busy handler on writer and/or readers
             // when kind is not .Passive.
             let code = sqlite3_wal_checkpoint_v2(db.sqliteConnection, nil, kind.rawValue, nil, nil)
             guard code == SQLITE_OK else {
-                throw DatabaseError(code: code, message: db.lastErrorMessage, sql: nil)
+                throw DatabaseError(resultCode: code, message: db.lastErrorMessage, sql: nil)
             }
         }
     }
@@ -148,16 +130,10 @@ public final class DatabasePool {
     /// See also setupMemoryManagement(application:)
     public func releaseMemory() {
         // TODO: test that this method blocks the current thread until all database accesses are completed.
-        writer.sync { db in
-            db.releaseMemory()
-        }
-        
+        write { $0.releaseMemory() }
         readerPool.forEach { reader in
-            reader.sync { db in
-                db.releaseMemory()
-            }
+            reader.sync { $0.releaseMemory() }
         }
-        
         readerPool.clear()
     }
     
@@ -227,9 +203,7 @@ public final class DatabasePool {
         /// Changes the passphrase of an encrypted database
         public func change(passphrase: String) throws {
             try readerPool.clear(andThen: {
-                try writer.sync { db in
-                    try db.change(passphrase: passphrase)
-                }
+                try write { try $0.change(passphrase: passphrase) }
                 readerConfig.passphrase = passphrase
             })
         }
@@ -314,9 +288,7 @@ extension DatabasePool : DatabaseReader {
     ///   happen while establishing the read access to the database.
     public func unsafeRead<T>(_ block: (Database) throws -> T) throws -> T {
         return try readerPool.get { reader in
-            try reader.sync { db in
-                try block(db)
-            }
+            try reader.sync(block)
         }
     }
     
@@ -338,15 +310,19 @@ extension DatabasePool : DatabaseReader {
     ///     }
     public func add(function: DatabaseFunction) {
         functions.update(with: function)
-        writer.sync { db in db.add(function: function) }
-        readerPool.forEach { $0.sync { db in db.add(function: function) } }
+        write { $0.add(function: function) }
+        readerPool.forEach { reader in
+            reader.sync { $0.add(function: function) }
+        }
     }
     
     /// Remove an SQL function.
     public func remove(function: DatabaseFunction) {
         functions.remove(function)
-        writer.sync { db in db.remove(function: function) }
-        readerPool.forEach { $0.sync { db in db.remove(function: function) } }
+        write { $0.remove(function: function) }
+        readerPool.forEach { reader in
+            reader.sync { $0.remove(function: function) }
+        }
     }
     
     
@@ -363,15 +339,19 @@ extension DatabasePool : DatabaseReader {
     ///     }
     public func add(collation: DatabaseCollation) {
         collations.update(with: collation)
-        writer.sync { db in db.add(collation: collation) }
-        readerPool.forEach { $0.sync { db in db.add(collation: collation) } }
+        write { $0.add(collation: collation) }
+        readerPool.forEach { reader in
+            reader.sync { $0.add(collation: collation) }
+        }
     }
     
     /// Remove a collation.
     public func remove(collation: DatabaseCollation) {
         collations.remove(collation)
-        writer.sync { db in db.remove(collation: collation) }
-        readerPool.forEach { $0.sync { db in db.remove(collation: collation) } }
+        write { $0.remove(collation: collation) }
+        readerPool.forEach { reader in
+            reader.sync { $0.remove(collation: collation) }
+        }
     }
 }
 
@@ -445,11 +425,17 @@ extension DatabasePool : DatabaseWriter {
     /// - throws: The error thrown by the block, or any error establishing the
     ///   transaction.
     public func writeInTransaction(_ kind: Database.TransactionKind? = nil, _ block: (Database) throws -> Database.TransactionCompletion) throws {
-        try writer.sync { db in
+        try write { db in
             try db.inTransaction(kind) {
                 try block(db)
             }
         }
+    }
+    
+    /// Returns an optional database connection. If not nil, the caller is
+    /// executing on the serialized writer dispatch queue.
+    public var availableDatabaseConnection: Database? {
+        return writer.availableDatabaseConnection
     }
     
     

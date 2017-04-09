@@ -1,21 +1,3 @@
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// LayoutedColumnMapping is a type that supports the RowAdapter protocol.
 public struct LayoutedColumnMapping {
     /// An array of (baseIndex, mappedName) pairs, where baseIndex is the index
@@ -208,7 +190,7 @@ public struct ColumnMapping : RowAdapter {
             .map { (mappedColumn, baseColumn) -> (Int, String) in
                 guard let index = layout.layoutIndex(ofColumn: baseColumn) else {
                     let columnNames = layout.layoutColumns.map { $0.1 }
-                    throw DatabaseError(code: SQLITE_MISUSE, message: "Mapping references missing column \(baseColumn). Valid column names are: \(columnNames.joined(separator: ", ")).")
+                    throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "Mapping references missing column \(baseColumn). Valid column names are: \(columnNames.joined(separator: ", ")).")
                 }
                 let baseIndex = layout.layoutColumns[index].0
                 return (baseIndex, mappedColumn)

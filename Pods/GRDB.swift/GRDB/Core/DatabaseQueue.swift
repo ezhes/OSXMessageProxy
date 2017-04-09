@@ -105,7 +105,7 @@ public final class DatabaseQueue {
     ///       .commit or .rollback.
     /// - throws: The error thrown by the block.
     public func inTransaction(_ kind: Database.TransactionKind? = nil, _ block: (Database) throws -> Database.TransactionCompletion) throws {
-        try serializedDatabase.sync { db in
+        try inDatabase { db in
             try db.inTransaction(kind) {
                 try block(db)
             }
@@ -121,9 +121,7 @@ public final class DatabaseQueue {
     ///
     /// See also setupMemoryManagement(application:)
     public func releaseMemory() {
-        serializedDatabase.sync { db in
-            db.releaseMemory()
-        }
+        inDatabase { $0.releaseMemory() }
     }
     
     
@@ -203,9 +201,7 @@ public final class DatabaseQueue {
         
         /// Changes the passphrase of an encrypted database
         public func change(passphrase: String) throws {
-            try serializedDatabase.sync { db in
-                try db.change(passphrase: passphrase)
-            }
+            try inDatabase { try $0.change(passphrase: passphrase) }
         }
     }
 #endif
@@ -218,18 +214,38 @@ extension DatabaseQueue : DatabaseReader {
     
     // MARK: - DatabaseReader Protocol Adoption
     
-    /// Alias for inDatabase
+    /// Synchronously executes a read-only block in a protected dispatch queue,
+    /// and returns its result.
     ///
-    /// This method is part of the DatabaseReader protocol adoption.
+    ///     let persons = try dbQueue.read { db in
+    ///         try Person.fetchAll(...)
+    ///     }
+    ///
+    /// This method is *not* reentrant.
+    ///
+    /// Starting iOS 8.2, OSX 10.10, and with custom SQLite builds and
+    /// SQLCipher, attempts to write in the database throw a DatabaseError whose
+    /// resultCode is `SQLITE_READONLY`.
+    ///
+    /// - parameter block: A block that accesses the database.
+    /// - throws: The error thrown by the block.
     public func read<T>(_ block: (Database) throws -> T) rethrows -> T {
-        return try serializedDatabase.sync(block)
+        // query_only pragma was added in SQLite 3.8.0 http://www.sqlite.org/changes.html#version_3_8_0
+        // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
+        #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+            return try inDatabase { try readOnly($0, block) }
+        #else
+            if #available(iOS 8.2, OSX 10.10, *) {
+                return try inDatabase { try readOnly($0, block) }
+            } else {
+                return try inDatabase(block)
+            }
+        #endif
     }
     
-    /// Alias for inDatabase
-    ///
-    /// This method is part of the DatabaseReader protocol adoption.
+    /// Alias for `inDatabase`. See `DatabaseReader.unsafeRead`.
     public func unsafeRead<T>(_ block: (Database) throws -> T) rethrows -> T {
-        return try serializedDatabase.sync(block)
+        return try inDatabase(block)
     }
     
     
@@ -249,16 +265,12 @@ extension DatabaseQueue : DatabaseReader {
     ///         try Int.fetchOne(db, "SELECT succ(1)") // 2
     ///     }
     public func add(function: DatabaseFunction) {
-        serializedDatabase.sync { db in
-            db.add(function: function)
-        }
+        inDatabase { $0.add(function: function) }
     }
     
     /// Remove an SQL function.
     public func remove(function: DatabaseFunction) {
-        serializedDatabase.sync { db in
-            db.remove(function: function)
-        }
+        inDatabase { $0.remove(function: function) }
     }
     
     
@@ -274,16 +286,12 @@ extension DatabaseQueue : DatabaseReader {
     ///         try db.execute("CREATE TABLE files (name TEXT COLLATE LOCALIZED_STANDARD")
     ///     }
     public func add(collation: DatabaseCollation) {
-        serializedDatabase.sync { db in
-            db.add(collation: collation)
-        }
+        inDatabase { $0.add(collation: collation) }
     }
     
     /// Remove a collation.
     public func remove(collation: DatabaseCollation) {
-        serializedDatabase.sync { db in
-            db.remove(collation: collation)
-        }
+        inDatabase { $0.remove(collation: collation) }
     }
 }
 
@@ -295,25 +303,53 @@ extension DatabaseQueue : DatabaseWriter {
     
     // MARK: - DatabaseWriter Protocol Adoption
     
-    /// Alias for inDatabase
-    ///
-    /// This method is part of the DatabaseWriter protocol adoption.
+    /// Alias for `inDatabase`. See `DatabaseWriter.write`.
     public func write<T>(_ block: (Database) throws -> T) rethrows -> T {
         return try inDatabase(block)
     }
     
-    /// Alias for inTransaction
-    ///
-    /// This method is part of the DatabaseWriter protocol adoption.
-    public func writeInTransaction(_ kind: Database.TransactionKind? = nil, _ block: (Database) throws -> Database.TransactionCompletion) throws {
-        try inTransaction(kind, block)
-    }
-
     /// Synchronously executes *block*.
     ///
-    /// This method is part of the DatabaseWriter protocol adoption, and must
-    /// be called from the protected database dispatch queue.
+    /// Starting iOS 8.2, OSX 10.10, and with custom SQLite builds and
+    /// SQLCipher, attempts to write in the database throw a DatabaseError whose
+    /// resultCode is `SQLITE_READONLY`.
+    ///
+    /// This method must be called from the protected database dispatch queue.
+    /// See `DatabaseWriter.readFromCurrentState`.
     public func readFromCurrentState(_ block: @escaping (Database) -> Void) {
-        serializedDatabase.execute(block)
+        // query_only pragma was added in SQLite 3.8.0 http://www.sqlite.org/changes.html#version_3_8_0
+        // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
+        #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+            serializedDatabase.execute { readOnly($0, block) }
+        #else
+            if #available(iOS 8.2, OSX 10.10, *) {
+                serializedDatabase.execute { readOnly($0, block) }
+            } else {
+                serializedDatabase.execute(block)
+            }
+        #endif
+    }
+    
+    /// Returns an optional database connection. If not nil, the caller is
+    /// executing on the protected database dispatch queue.
+    public var availableDatabaseConnection: Database? {
+        return serializedDatabase.availableDatabaseConnection
     }
 }
+
+// Wraps the block between two `PRAGMA query_only` statements.
+//
+// This method is unsafe because the two calls to `PRAGMA query_only` are
+// not guaranteed to be serialized (some other thread could mess with this).
+private func readOnly<T>(_ db: Database, _ block: (Database) throws -> T) rethrows -> T {
+    if db.configuration.readonly {
+        return try block(db)
+    } else {
+        try! db.execute("PRAGMA query_only = 1")    // Assume can't fail
+        let result = try block(db)
+        try! db.execute("PRAGMA query_only = 0")    // Assume can't fail
+        return result
+    }
+}
+
+

@@ -1,23 +1,5 @@
 import Foundation
 
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// A database row.
 public final class Row {
     
@@ -156,7 +138,7 @@ extension Row {
     /// righmost column.
     public func value(atIndex index: Int) -> DatabaseValueConvertible? {
         GRDBPrecondition(index >= 0 && index < count, "row index out of range")
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return impl.databaseValue(atUncheckedIndex: index).storage.value
     }
     
     /// Returns the value at given index, converted to the requested type.
@@ -169,7 +151,7 @@ extension Row {
     /// fail, a fatal error is raised.
     public func value<Value: DatabaseValueConvertible>(atIndex index: Int) -> Value? {
         GRDBPrecondition(index >= 0 && index < count, "row index out of range")
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return Value.convertOptional(from: impl.databaseValue(atUncheckedIndex: index))
     }
     
     /// Returns the value at given index, converted to the requested type.
@@ -187,7 +169,7 @@ extension Row {
     public func value<Value: DatabaseValueConvertible & StatementColumnConvertible>(atIndex index: Int) -> Value? {
         GRDBPrecondition(index >= 0 && index < count, "row index out of range")
         guard let sqliteStatement = sqliteStatement else {
-            return impl.databaseValue(atUncheckedIndex: index).value()
+            return Value.convertOptional(from: impl.databaseValue(atUncheckedIndex: index))
         }
         return Row.statementColumnConvertible(atUncheckedIndex: index, in: sqliteStatement)
     }
@@ -201,7 +183,7 @@ extension Row {
     /// SQLite value can not be converted to `Value`.
     public func value<Value: DatabaseValueConvertible>(atIndex index: Int) -> Value {
         GRDBPrecondition(index >= 0 && index < count, "row index out of range")
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return Value.convert(from: impl.databaseValue(atUncheckedIndex: index))
     }
     
     /// Returns the value at given index, converted to the requested type.
@@ -218,7 +200,7 @@ extension Row {
     public func value<Value: DatabaseValueConvertible & StatementColumnConvertible>(atIndex index: Int) -> Value {
         GRDBPrecondition(index >= 0 && index < count, "row index out of range")
         guard let sqliteStatement = sqliteStatement else {
-            return impl.databaseValue(atUncheckedIndex: index).value()
+            return Value.convert(from: impl.databaseValue(atUncheckedIndex: index))
         }
         return Row.statementColumnConvertible(atUncheckedIndex: index, in: sqliteStatement)
     }
@@ -241,7 +223,7 @@ extension Row {
         guard let index = impl.index(ofColumn: columnName) else {
             return nil
         }
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return impl.databaseValue(atUncheckedIndex: index).storage.value
     }
     
     /// Returns the value at given column, converted to the requested type.
@@ -256,7 +238,7 @@ extension Row {
         guard let index = impl.index(ofColumn: columnName) else {
             return nil
         }
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return Value.convertOptional(from: impl.databaseValue(atUncheckedIndex: index))
     }
     
     /// Returns the value at given column, converted to the requested type.
@@ -276,7 +258,7 @@ extension Row {
             return nil
         }
         guard let sqliteStatement = sqliteStatement else {
-            return impl.databaseValue(atUncheckedIndex: index).value()
+            return Value.convertOptional(from: impl.databaseValue(atUncheckedIndex: index))
         }
         return Row.statementColumnConvertible(atUncheckedIndex: index, in: sqliteStatement)
     }
@@ -295,7 +277,7 @@ extension Row {
             // Programmer error
             fatalError("no such column: \(columnName)")
         }
-        return impl.databaseValue(atUncheckedIndex: index).value()
+        return Value.convert(from: impl.databaseValue(atUncheckedIndex: index))
     }
     
     /// Returns the value at given column, converted to the requested type.
@@ -317,7 +299,7 @@ extension Row {
             fatalError("no such column: \(columnName)")
         }
         guard let sqliteStatement = sqliteStatement else {
-            return impl.databaseValue(atUncheckedIndex: index).value()
+            return Value.convert(from: impl.databaseValue(atUncheckedIndex: index))
         }
         return Row.statementColumnConvertible(atUncheckedIndex: index, in: sqliteStatement)
     }
@@ -888,7 +870,7 @@ private struct ArrayRowImpl : RowImpl {
     }
     
     func dataNoCopy(atUncheckedIndex index:Int) -> Data? {
-        return databaseValue(atUncheckedIndex: index).value()
+        return Data.convertOptional(from: databaseValue(atUncheckedIndex: index))
     }
     
     func databaseValue(atUncheckedIndex index: Int) -> DatabaseValue {
@@ -940,7 +922,7 @@ private struct StatementCopyRowImpl : RowImpl {
     }
     
     func dataNoCopy(atUncheckedIndex index:Int) -> Data? {
-        return databaseValue(atUncheckedIndex: index).value()
+        return Data.convertOptional(from: databaseValue(atUncheckedIndex: index))
     }
     
     func databaseValue(atUncheckedIndex index: Int) -> DatabaseValue {

@@ -1,21 +1,3 @@
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// The protocol for all types that can fetch values from a database.
 ///
 /// It is adopted by DatabaseQueue and DatabasePool.
@@ -38,8 +20,8 @@ public protocol DatabaseReader : class {
     /// Synchronously executes a read-only block that takes a database
     /// connection, and returns its result.
     ///
-    /// The block argument is isolated. Eventual concurrent database updates are
-    /// not visible inside the block:
+    /// Guarantee 1: the block argument is isolated. Eventual concurrent
+    /// database updates are not visible inside the block:
     ///
     ///     try reader.read { db in
     ///         // Those two values are guaranteed to be equal, even if the
@@ -53,6 +35,10 @@ public protocol DatabaseReader : class {
     ///         let count = try Int.fetchOne(db, "SELECT COUNT(*) FROM wines")!
     ///     }
     ///
+    /// Guarantee 2: Starting iOS 8.2, OSX 10.10, and with custom SQLite builds
+    /// and SQLCipher, attempts to write in the database throw a DatabaseError
+    /// whose resultCode is `SQLITE_READONLY`.
+    ///
     /// - parameter block: A block that accesses the database.
     /// - throws: The error thrown by the block, or any DatabaseError that would
     ///   happen while establishing the read access to the database.
@@ -60,6 +46,8 @@ public protocol DatabaseReader : class {
     
     /// Synchronously executes a read-only block that takes a database
     /// connection, and returns its result.
+    ///
+    /// The two guarantees of the safe `read` method are lifted:
     ///
     /// The block argument is not isolated: eventual concurrent database updates
     /// are visible inside the block:
@@ -71,13 +59,16 @@ public protocol DatabaseReader : class {
     ///         let count2 = try Int.fetchOne(db, "SELECT COUNT(*) FROM wines")!
     ///     }
     ///
-    /// Cursor iteration is safe, though:
+    /// Cursor iterations are isolated, though:
     ///
     ///     try reader.unsafeRead { db in
     ///         // No concurrent update can mess with this iteration:
     ///         let rows = try Row.fetchCursor(db, "SELECT ...")
     ///         while let row = try rows.next() { ... }
     ///     }
+    ///
+    /// The block argument is not prevented from writing (DatabaseQueue, in
+    /// particular, will accept database modifications in `unsafeRead`).
     ///
     /// - parameter block: A block that accesses the database.
     /// - throws: The error thrown by the block, or any DatabaseError that would
@@ -141,10 +132,10 @@ extension DatabaseReader {
         try read { dbFrom in
             try writer.write { dbDest in
                 guard let backup = sqlite3_backup_init(dbDest.sqliteConnection, "main", dbFrom.sqliteConnection, "main") else {
-                    throw DatabaseError(code: dbDest.lastErrorCode, message: dbDest.lastErrorMessage)
+                    throw DatabaseError(resultCode: dbDest.lastErrorCode, message: dbDest.lastErrorMessage)
                 }
                 guard Int(bitPattern: backup) != Int(SQLITE_ERROR) else {
-                    throw DatabaseError(code: SQLITE_ERROR)
+                    throw DatabaseError(resultCode: .SQLITE_ERROR)
                 }
                 
                 afterBackupInit?()
@@ -158,7 +149,7 @@ extension DatabaseReader {
                         case SQLITE_OK:
                             afterBackupStep?()
                         case let code:
-                            throw DatabaseError(code: code, message: dbDest.lastErrorMessage)
+                            throw DatabaseError(resultCode: code, message: dbDest.lastErrorMessage)
                         }
                     }
                 } catch {
@@ -170,7 +161,7 @@ extension DatabaseReader {
                 case SQLITE_OK:
                     break
                 case let code:
-                    throw DatabaseError(code: code, message: dbDest.lastErrorMessage)
+                    throw DatabaseError(resultCode: code, message: dbDest.lastErrorMessage)
                 }
                 
                 dbDest.clearSchemaCache()

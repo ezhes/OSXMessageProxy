@@ -127,12 +127,13 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 0820;
-				LastUpgradeCheck = 0820;
+				LastUpgradeCheck = 0830;
 				ORGANIZATIONNAME = "Salman Husain";
 				TargetAttributes = {
 					22FF3D001E67A45B00F2E70C = {
 						CreatedOnToolsVersion = 8.2.1;
 						DevelopmentTeam = XBKLZPN8YT;
+						LastSwiftMigration = 0830;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
 							com.apple.Sandbox = {

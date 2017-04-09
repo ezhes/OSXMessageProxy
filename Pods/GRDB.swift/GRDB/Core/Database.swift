@@ -1,23 +1,5 @@
 import Foundation
 
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// A raw SQLite connection, suitable for the SQLite C API.
 public typealias SQLiteConnection = OpaquePointer
 
@@ -269,7 +251,7 @@ public final class Database {
         return Int(sqlite3_total_changes(sqliteConnection))
     }
     
-    var lastErrorCode: Int32 { return sqlite3_errcode(sqliteConnection) }
+    var lastErrorCode: ResultCode { return ResultCode(rawValue: sqlite3_errcode(sqliteConnection)) }
     var lastErrorMessage: String? { return String(cString: sqlite3_errmsg(sqliteConnection)) }
     
     /// True if the database connection is currently in a transaction.
@@ -311,11 +293,49 @@ public final class Database {
         var sqliteConnection: SQLiteConnection? = nil
         let code = sqlite3_open_v2(path, &sqliteConnection, configuration.SQLiteOpenFlags, nil)
         guard code == SQLITE_OK else {
-            throw DatabaseError(code: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+            throw DatabaseError(resultCode: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
         }
         
         do {
+            // Use extended result codes
+            do {
+                let code = sqlite3_extended_result_codes(sqliteConnection!, 1)
+                guard code == SQLITE_OK else {
+                    throw DatabaseError(resultCode: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+                }
+            }
+            
             #if SQLITE_HAS_CODEC
+                // https://discuss.zetetic.net/t/important-advisory-sqlcipher-with-xcode-8-and-new-sdks/1688
+                //
+                // > In order to avoid situations where SQLite might be used
+                // > improperly at runtime, we strongly recommend that
+                // > applications institute a runtime test to ensure that the
+                // > application is actually using SQLCipher on the active
+                // > connection.
+                
+                let isSQLCipherValid: Bool
+                do {
+                    var sqliteStatement: SQLiteStatement? = nil
+                    let code = sqlite3_prepare_v2(sqliteConnection, "PRAGMA cipher_version", -1, &sqliteStatement, nil)
+                    guard code == SQLITE_OK else {
+                        throw DatabaseError(resultCode: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+                    }
+                    defer {
+                        sqlite3_finalize(sqliteStatement)
+                    }
+                    switch sqlite3_step(sqliteStatement) {
+                    case SQLITE_ROW:
+                        isSQLCipherValid = (sqlite3_column_text(sqliteStatement, 0) != nil)
+                    default:
+                        isSQLCipherValid = false
+                    }
+                }
+                
+                guard isSQLCipherValid else {
+                    throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "GRDB is not linked against SQLCipher. Check https://discuss.zetetic.net/t/important-advisory-sqlcipher-with-xcode-8-and-new-sdks/1688")
+                }
+                
                 if let passphrase = configuration.passphrase {
                     try Database.set(passphrase: passphrase, forConnection: sqliteConnection!)
                 }
@@ -329,7 +349,7 @@ public final class Database {
             do {
                 let code = sqlite3_exec(sqliteConnection, "SELECT * FROM sqlite_master LIMIT 1", nil, nil, nil)
                 guard code == SQLITE_OK else {
-                    throw DatabaseError(code: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+                    throw DatabaseError(resultCode: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
                 }
             }
         } catch {
@@ -500,7 +520,7 @@ public final class Database {
 private func closeConnection(_ sqliteConnection: SQLiteConnection) {
     // sqlite3_close_v2 was added in SQLite 3.7.14 http://www.sqlite.org/changes.html#version_3_7_14
     // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
-    if #available(iOS 8.2, OSX 10.10, *) {
+    if sqlite3_libversion_number() >= 3007014 {
         // https://www.sqlite.org/c3ref/close.html
         // > If sqlite3_close_v2() is called with unfinalized prepared
         // > statements and/or unfinished sqlite3_backups, then the database
@@ -655,7 +675,7 @@ extension Database {
         }
         let validateRemainingArguments = {
             if !arguments.values.isEmpty {
-                throw DatabaseError(code: SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)")
+                throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "wrong number of statement arguments: \(initialValuesCount)")
             }
         }
         
@@ -681,7 +701,7 @@ extension Database {
                 var sqliteStatement: SQLiteStatement? = nil
                 let code = sqlite3_prepare_v2(sqliteConnection, statementStart, -1, &sqliteStatement, &statementEnd)
                 guard code == SQLITE_OK else {
-                    error = DatabaseError(code: code, message: lastErrorMessage, sql: sql)
+                    error = DatabaseError(resultCode: code, message: lastErrorMessage, sql: sql)
                     break
                 }
                 
@@ -770,7 +790,7 @@ extension Database {
                     if let message = error.message {
                         sqlite3_result_error(context, message, -1)
                     }
-                    sqlite3_result_error_code(context, Int32(error.code))
+                    sqlite3_result_error_code(context, error.extendedResultCode.rawValue)
                 } catch {
                     sqlite3_result_error(context, "\(error)", -1)
                 }
@@ -778,7 +798,7 @@ extension Database {
         
         guard code == SQLITE_OK else {
             // Assume a GRDB bug: there is no point throwing any error.
-            fatalError(DatabaseError(code: code, message: lastErrorMessage).description)
+            fatalError(DatabaseError(resultCode: code, message: lastErrorMessage).description)
         }
     }
     
@@ -793,7 +813,7 @@ extension Database {
             nil, nil, nil, nil, nil)
         guard code == SQLITE_OK else {
             // Assume a GRDB bug: there is no point throwing any error.
-            fatalError(DatabaseError(code: code, message: lastErrorMessage).description)
+            fatalError(DatabaseError(resultCode: code, message: lastErrorMessage).description)
         }
     }
 }
@@ -882,7 +902,7 @@ extension Database {
             }, nil)
         guard code == SQLITE_OK else {
             // Assume a GRDB bug: there is no point throwing any error.
-            fatalError(DatabaseError(code: code, message: lastErrorMessage).description)
+            fatalError(DatabaseError(resultCode: code, message: lastErrorMessage).description)
         }
     }
     
@@ -951,7 +971,7 @@ extension Database {
             sqlite3_key(sqliteConnection, bytes, Int32(data.count))
         }
         guard code == SQLITE_OK else {
-            throw DatabaseError(code: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+            throw DatabaseError(resultCode: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
         }
     }
 
@@ -970,7 +990,7 @@ extension Database {
             sqlite3_rekey(sqliteConnection, bytes, Int32(data.count))
         }
         guard code == SQLITE_OK else {
-            throw DatabaseError(code: code, message: String(cString: sqlite3_errmsg(sqliteConnection)))
+            throw DatabaseError(resultCode: code, message: lastErrorMessage)
         }
     }
 }
@@ -1127,7 +1147,7 @@ extension Database {
         // 1   | firstName | TEXT    | 0       | NULL       | 0  |
         // 2   | lastName  | TEXT    | 0       | NULL       | 0  |
         
-        if #available(iOS 8.2, OSX 10.10, *) { } else {
+        if sqlite3_libversion_number() < 3008005 {
             // Work around a bug in SQLite where PRAGMA table_info would
             // return a result even after the table was deleted.
             if try !tableExists(tableName) {
@@ -1170,26 +1190,33 @@ extension Database {
         return indexes
     }
     
+    /// If there exists a unique key on columns, return the columns
+    /// ordered as the matching index (or primay key). Case of returned columns
+    /// is not guaranteed.
+    func columnsForUniqueKey(_ columns: [String], in tableName: String) throws -> [String]? {
+        let primaryKey = try self.primaryKey(tableName) // first, so that we fail early and consistently should the table not exist
+        let lowercasedColumns = Set(columns.map { $0.lowercased() })
+        if let index = try indexes(on: tableName).first(where: { index in index.isUnique && Set(index.columns.map { $0.lowercased() }) == lowercasedColumns }) {
+            // There is an explicit unique index on the columns
+            return index.columns
+        }
+        if let lowercasedColumn = lowercasedColumns.first, lowercasedColumns.count == 1 {
+            if let rowIDColumnName = primaryKey?.rowIDColumn, rowIDColumnName.lowercased() == lowercasedColumn {
+                // An explicit INTEGER PRIMARY KEY column is a unique key.
+                return [rowIDColumnName]
+            }
+            if try primaryKey == nil && ["rowid", "oid", "_rowid_"].contains(lowercasedColumn) && !self.columns(in: tableName).map({ $0.name.lowercased() }).contains(lowercasedColumn) {
+                // A rowid, oid or _rowid_ column is a unique key when there is no explicit primary key and the column is not already used.
+                return [lowercasedColumn]
+            }
+        }
+        return nil
+    }
+    
     /// True if a sequence of columns uniquely identifies a row, that is to say
     /// if the columns are the primary key, or if there is a unique index on them.
     public func table<T: Sequence>(_ tableName: String, hasUniqueKey columns: T) throws -> Bool where T.Iterator.Element == String {
-        let primaryKey = try self.primaryKey(tableName) // first, so that we fail early and consistently should the table not exist
-        let columns = Set(columns.map { $0.lowercased() })
-        if try indexes(on: tableName).contains(where: { index in index.isUnique && Set(index.columns.map { $0.lowercased() }) == columns }) {
-            // There is an explicit unique index on the columns
-            return true
-        }
-        if let column = columns.first, columns.count == 1 {
-            if let rowIDColumnName = primaryKey?.rowIDColumn, rowIDColumnName.lowercased() == column {
-                // An explicit INTEGER PRIMARY KEY column is a unique key.
-                return true
-            }
-            if try primaryKey == nil && ["rowid", "oid", "_rowid_"].contains(column) && !self.columns(in: tableName).map({ $0.name.lowercased() }).contains(column) {
-                // A rowid, oid or _rowid_ column is a unique key when there is no explicit primary key and the column is not already used.
-                return true
-            }
-        }
-        return false
+        return try columnsForUniqueKey(Array(columns), in: tableName) != nil
     }
     
 }
@@ -1395,6 +1422,18 @@ final class StatementCompilationObserver {
                 let name = String(cString: CString2!)
                 let action = UpdateStatement.TransactionStatementInfo.SavepointAction(rawValue: String(cString: CString1!))!
                 observer.transactionStatementInfo = .savepoint(name: name, action: action)
+            case SQLITE_FUNCTION:
+                let functionName = String(cString: CString2!)
+                if functionName.uppercased() == "COUNT" {
+                    // As soon as a request uses the COUNT function, we don't
+                    // know which table is involved. For example, the
+                    // `SELECT COUNT(*) FROM persons` request never ever tells
+                    // GRDB about the `persons` table.
+                    //
+                    // We ignore the actual selection.
+                    let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
+                    observer.selectionInfo = SelectStatement.SelectionInfo.unknown()
+                }
             default:
                 break
             }
@@ -1616,7 +1655,7 @@ extension Database {
             // TODO: test that isInsideTransaction, savepointStack, transaction
             // observers, etc. are in good shape when such an implicit rollback
             // happens.
-            guard let underlyingError = underlyingError as? DatabaseError, [SQLITE_FULL, SQLITE_IOERR, SQLITE_BUSY, SQLITE_NOMEM].contains(Int32(underlyingError.code)) else {
+            guard let underlyingError = underlyingError as? DatabaseError, [.SQLITE_FULL, .SQLITE_IOERR, .SQLITE_BUSY, .SQLITE_NOMEM].contains(underlyingError.resultCode) else {
                 throw error
             }
         }
@@ -2024,6 +2063,26 @@ public enum DatabaseEventKind {
     
     /// The update of a set of columns in a database table
     case update(tableName: String, columnNames: Set<String>)
+    
+    /// Returns whether event has any impact on tables and columns described
+    /// by selectionInfo.
+    ///
+    /// If the result is nil, then the information is unknown.
+    public func impacts(_ selectionInfo: SelectStatement.SelectionInfo) -> Bool? {
+        if selectionInfo.isUnknown {
+            return nil
+        }
+        
+        switch self {
+        case .delete(let tableName):
+            return selectionInfo.contains(anyColumnFrom: tableName)
+        case .insert(let tableName):
+            return selectionInfo.contains(anyColumnFrom: tableName)
+        case .update(let tableName, let updatedColumnNames):
+            return selectionInfo.contains(anyColumnIn: updatedColumnNames, from: tableName)
+        }
+    }
+
 }
 
 extension DatabaseEventKind {

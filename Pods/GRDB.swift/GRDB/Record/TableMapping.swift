@@ -1,21 +1,3 @@
-#if !USING_BUILTIN_SQLITE
-    #if os(OSX)
-        import SQLiteMacOSX
-    #elseif os(iOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteiPhoneSimulator
-        #else
-            import SQLiteiPhoneOS
-        #endif
-    #elseif os(watchOS)
-        #if (arch(i386) || arch(x86_64))
-            import SQLiteWatchSimulator
-        #else
-            import SQLiteWatchOS
-        #endif
-    #endif
-#endif
-
 /// Types that adopt TableMapping declare a particular relationship with
 /// a database table.
 ///
@@ -204,17 +186,19 @@ extension TableMapping {
         var whereClauses: [String] = []
         for dictionary in keys {
             GRDBPrecondition(dictionary.count > 0, "Invalid empty key dictionary")
-            let columns = dictionary.keys
-            guard try db.table(databaseTableName, hasUniqueKey: columns) else {
-                let error = DatabaseError(code: SQLITE_MISUSE, message: "table \(databaseTableName) has no unique index on column(s) \(columns.joined(separator: ", "))")
+            let columns = Array(dictionary.keys)
+            guard let orderedColumns = try db.columnsForUniqueKey(columns, in: databaseTableName) else {
+                let error = DatabaseError(resultCode: .SQLITE_MISUSE, message: "table \(databaseTableName) has no unique index on column(s) \(columns.sorted().joined(separator: ", "))")
                 if fatalErrorOnMissingUniqueIndex {
                     fatalError(error.description)
                 } else {
                     throw error
                 }
             }
-            arguments.append(contentsOf: dictionary.values)
-            whereClauses.append("(" + (columns.map { "\($0.quotedDatabaseIdentifier) = ?" } as [String]).joined(separator: " AND ") + ")")
+            arguments.append(contentsOf: orderedColumns.map { orderedColumn in
+                dictionary.first { (column, value) in column.lowercased() == orderedColumn.lowercased() }!.value
+            })
+            whereClauses.append("(" + (orderedColumns.map { "\($0.quotedDatabaseIdentifier) = ?" } as [String]).joined(separator: " AND ") + ")")
         }
         
         let whereClause = whereClauses.joined(separator: " OR ")
@@ -228,22 +212,22 @@ extension TableMapping {
 extension TableMapping {
     /// Returns a function that returns the primary key of a row.
     ///
-    /// If the table has no primary key, and selectsRowID is true, use the
-    /// "rowid" key.
+    /// If the table has no primary key, and selectsRowID is true, the primary
+    /// key is the "rowid" column.
     ///
     ///     try dbQueue.inDatabase { db in
-    ///         let primaryKey = try Person.primaryKeyFunction(db)
+    ///         let primaryKey = try Person.rowPrimaryKey(db)
     ///         let row = try Row.fetchOne(db, "SELECT * FROM persons")!
     ///         primaryKey(row) // ["id": 1]
     ///     }
     ///
     /// - throws: A DatabaseError if table does not exist.
-    static func primaryKeyFunction(_ db: Database) throws -> (Row) -> [String: DatabaseValue] {
+    static func rowPrimaryKey(_ db: Database) throws -> (Row) -> [String: DatabaseValue] {
         if let primaryKey = try db.primaryKey(databaseTableName) {
             let columns = primaryKey.columns
             return { row in Dictionary(keys: columns) { row.value(named: $0) } }
         } else if selectsRowID {
-            return { row in ["rowid": row.value(named: "rowid")] }
+            return { row in [Column.rowID.name: row.value(Column.rowID)] }
         } else {
             return { _ in [:] }
         }
@@ -265,8 +249,8 @@ extension TableMapping {
     ///     }
     ///
     /// - throws: A DatabaseError if table does not exist.
-    static func primaryKeyRowComparator(_ db: Database) throws -> (Row, Row) -> Bool {
-        let primaryKey = try primaryKeyFunction(db)
+    public static func primaryKeyRowComparator(_ db: Database) throws -> (Row, Row) -> Bool {
+        let primaryKey = try rowPrimaryKey(db)
         return { (lhs, rhs) in
             let (lhs, rhs) = (primaryKey(lhs), primaryKey(rhs))
             guard lhs.contains(where: { !$1.isNull }) else { return false }
