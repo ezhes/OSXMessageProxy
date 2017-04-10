@@ -332,7 +332,7 @@ class DatabaseConstructor: NSObject {
     func sendMessage(toRecipients:String,withMessage:String) {
         //Create our queue-able message
         let newMessage = SendableMessage()
-        newMessage.messageContents = withMessage
+        newMessage.messageContents = withMessage.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) //we need to trim trailing white space/new lines otherwise the comparator fails and we flood the with messages. The iMessage client filters it out when we send it in so we HAVE to do this
         newMessage.recipients = toRecipients;
         //..and send it. This is the user friendly way and we need to make a packet to send it
         sendMessage(message: newMessage)
@@ -395,7 +395,7 @@ class DatabaseConstructor: NSObject {
             }else {
                 //Message failed to send after 13 seconds.
                 self.messageQueue[0].sendFailures+=1;
-                if (self.messageQueue[0].sendFailures >= 4) {
+                if (self.messageQueue[0].sendFailures >= 3) {
                     //We've failed too many times, notify that the message didn't send
                     DispatchQueue.main.async {
                         self.sendNotification(title: "Failed to send message", contents: self.messageQueue[0].messageContents!, appURL: self.messageQueue[0].recipients!)
