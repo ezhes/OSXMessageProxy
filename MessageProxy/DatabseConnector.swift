@@ -284,8 +284,12 @@ class DatabaseConstructor: NSObject {
                 }
                 
                 //Add our last message. This gives us a blurb, last date, etc
-                conversationDictionaryRepresentation.setValue(getMessages(forChatID: conversation.value(named: "chat_id"), messageLimit: 1).firstObject, forKey: "lastMessage")
-                conversationBundle.setValue(conversationDictionaryRepresentation, forKey: "\(key)")
+                if let mostRecentBlurbMessage = getMessages(forChatID: conversation.value(named: "chat_id"), messageLimit: 1).firstObject {
+                    conversationDictionaryRepresentation.setValue(mostRecentBlurbMessage, forKey: "lastMessage")
+                    //Only add if we've added our last message sucessfully
+                    conversationBundle.setValue(conversationDictionaryRepresentation, forKey: "\(key)")
+                }
+                
             }
             
         })
