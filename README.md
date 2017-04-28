@@ -1,6 +1,6 @@
 # MessageProxy: An Open Source iMessage API 
 
-![image](Screenshots/Screen Shot 2017-04-28 at 12.10.16 PM.png)
+![image](Screenshots/042817.png)
 
 
 This API is primarily designed to be used with [AndromedaB (open source!)](https://github.com/shusain93/Andromeda-iMessage) however it is still possible to use independently. This project uses GCDWebserver for network requests. You can more or less deduce the API from the `ViewController.swift` in the code blocks. 
