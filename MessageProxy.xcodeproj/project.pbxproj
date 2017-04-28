@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		222AB43A1E6A526C00700B13 /* messageSender.applescript in Sources */ = {isa = PBXBuildFile; fileRef = 222AB4391E6A526C00700B13 /* messageSender.applescript */; };
+		22DFF2371EB30A0B009B2E09 /* CONFIG.plist in Resources */ = {isa = PBXBuildFile; fileRef = 22DFF2361EB30A0B009B2E09 /* CONFIG.plist */; };
+		22DFF2391EB3135D009B2E09 /* CONFIG_EXAMPLE.plist in Resources */ = {isa = PBXBuildFile; fileRef = 22DFF2381EB3135D009B2E09 /* CONFIG_EXAMPLE.plist */; };
 		22FF3D051E67A45B00F2E70C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FF3D041E67A45B00F2E70C /* AppDelegate.swift */; };
 		22FF3D071E67A45B00F2E70C /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FF3D061E67A45B00F2E70C /* ViewController.swift */; };
 		22FF3D091E67A45B00F2E70C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 22FF3D081E67A45B00F2E70C /* Assets.xcassets */; };
@@ -19,6 +21,8 @@
 
 /* Begin PBXFileReference section */
 		222AB4391E6A526C00700B13 /* messageSender.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; path = messageSender.applescript; sourceTree = "<group>"; };
+		22DFF2361EB30A0B009B2E09 /* CONFIG.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = CONFIG.plist; sourceTree = "<group>"; };
+		22DFF2381EB3135D009B2E09 /* CONFIG_EXAMPLE.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = CONFIG_EXAMPLE.plist; sourceTree = "<group>"; };
 		22FF3D011E67A45B00F2E70C /* MessageProxy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MessageProxy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		22FF3D041E67A45B00F2E70C /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		22FF3D061E67A45B00F2E70C /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
@@ -67,6 +71,8 @@
 		22FF3D031E67A45B00F2E70C /* MessageProxy */ = {
 			isa = PBXGroup;
 			children = (
+				22DFF2381EB3135D009B2E09 /* CONFIG_EXAMPLE.plist */,
+				22DFF2361EB30A0B009B2E09 /* CONFIG.plist */,
 				22FF3D151E6A912100F2E70C /* MessageProxy.entitlements */,
 				222AB4391E6A526C00700B13 /* messageSender.applescript */,
 				22FF3D041E67A45B00F2E70C /* AppDelegate.swift */,
@@ -168,6 +174,8 @@
 			files = (
 				22FF3D091E67A45B00F2E70C /* Assets.xcassets in Resources */,
 				22FF3D0C1E67A45B00F2E70C /* Main.storyboard in Resources */,
+				22DFF2371EB30A0B009B2E09 /* CONFIG.plist in Resources */,
+				22DFF2391EB3135D009B2E09 /* CONFIG_EXAMPLE.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,6 +351,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS = NO;
 				CODE_SIGN_ENTITLEMENTS = MessageProxy/MessageProxy.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
@@ -361,6 +370,7 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS = NO;
 				CODE_SIGN_ENTITLEMENTS = MessageProxy/MessageProxy.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;

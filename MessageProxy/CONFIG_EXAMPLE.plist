@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ifttt_maker_key</key>
+	<string>GO HERE AND GET A TOKEN https://ifttt.com/maker_webhooks (you are to copy just the random text part of the given url once setup!!)</string>
+	<key>protection_token</key>
+	<string>Enter some long random text. Don&apos;t use special charachters just A-z0-9. Really doesn&apos;t matter, just needs to be unique since this is not encryption but instead a cleartext password. DO NOT SHARE THIS TOKEN ONLINE ANYWHERE NEAR YOU API URL!!</string>
+</dict>
+</plist>
