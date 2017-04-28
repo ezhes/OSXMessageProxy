@@ -15,11 +15,14 @@ class DatabaseConstructor: NSObject {
     private var contactsDatabase:[String:String]? //our cached database of contacts
     private var messageQueue:[SendableMessage] = [] //Our queue of messages to send
     
+    private var IFTTT_token:String = ""
     /// Make an init with a special database. Should be used!
     ///
     /// - Parameter datebaseLocation: The path to the iMessage database
-    init(datebaseLocation:String) throws {
+    init(datebaseLocation:String, iftttMakerToken:String) throws {
         super.init()
+        //store our notifier token
+        IFTTT_token = iftttMakerToken
         databaseQueue =  try DatabaseQueue(path: datebaseLocation)
         
         //Prepare our timer
@@ -39,7 +42,6 @@ class DatabaseConstructor: NSObject {
         }
         //Preapre contact
         contactsDatabase = getContactConverterDictionary()
-        
     }
     
     
@@ -429,7 +431,7 @@ class DatabaseConstructor: NSObject {
             let postDictionary = ["value1":title,"value2":contents,"value3":appURL]
             let postData = try JSONSerialization.data(withJSONObject: postDictionary, options: JSONSerialization.WritingOptions.prettyPrinted)
             //Now let's build our request
-            let request = NSMutableURLRequest(url: URL(string: "https://maker.ifttt.com/trigger/imessageRecieved/with/key/3HEnQUJ1WuSZcOAKYW9XJ")!)
+            let request = NSMutableURLRequest(url: URL(string: "https://maker.ifttt.com/trigger/imessageRecieved/with/key/\(IFTTT_token)")!)
             request.httpMethod = "POST"
             request.setValue("iMessageProxy/1.0/SalmanHusain", forHTTPHeaderField: "User-Agent")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -437,6 +439,7 @@ class DatabaseConstructor: NSObject {
             
             //Send our request
             let _ = NSURLConnection(request: request as URLRequest, delegate: nil)
+            
         }catch let parseError {
             print(parseError)
         }
