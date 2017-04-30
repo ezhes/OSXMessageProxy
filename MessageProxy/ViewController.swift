@@ -14,32 +14,76 @@ import GCDWebServer
 
 class ViewController: NSViewController {
     
-    @IBOutlet var logView: NSTextView!
+    @IBOutlet weak var serverStatusText: NSTextField!
+    @IBOutlet weak var APIProtectionKeyTextField: NSTextField!
+    @IBOutlet weak var makerAPIKeyTextField: NSTextField!
+    @IBOutlet weak var versionText: NSTextField!
     
     var passwordToken = "" //the constant, unencrypted password. Doesn't save us from replay, just endpoint leackage
     var IFTTTMakeKey = "" //The IFTTT make key to use so we can easily send notifications anywhere
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
-        
-        if let path = Bundle.main.path(forResource: "CONFIG", ofType: "plist") {
-            let plistData = NSDictionary(contentsOfFile: path)
-            //Stuff our password, crash if it's wrong. It's on you now
-            passwordToken = plistData?.object(forKey: "protection_token") as! String
-            IFTTTMakeKey = plistData?.object(forKey: "ifttt_maker_key") as! String
+    }
+    
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            versionText.stringValue = "v\(version)"
+        }
+        //Check if we've configured already
+        let defaults = UserDefaults.standard
+        if let apiProtectionKey = defaults.string(forKey: "protection_token") {
+            APIProtectionKeyTextField.stringValue = apiProtectionKey
+            passwordToken = apiProtectionKey
+            //Optional to have the key so check null
+            IFTTTMakeKey = defaults.string(forKey: "ifttt_maker_key") ?? "NO_MAKER_KEY_PROVIDED"
+            makerAPIKeyTextField.stringValue = IFTTTMakeKey
             //We've loaded the needed data, let's go
             setupWebserver()
         }else {
             //They didn't configure correctly
             let alert = NSAlert.init()
-            alert.messageText = "MISSING CONFIGURATION IN BUILD PATH"
-            alert.informativeText = "MessageProxy was built without a CONFIG.plist. Please rebuild the server application after duplicating CONFIG_EXAMPLE (rename it to CONFIG.plist) and fill in all the values!"
-            alert.addButton(withTitle: "Terminate")
+            alert.messageText = "First run configuration"
+            alert.informativeText = "MessageProxy can't find a saved API protection token and so it is neccesary that the application be configured.\n\nEnter some long random text for your API protection token. Don't use special charachters just A-z0-9. Really doesn't matter, just needs to be unique since this is not encryption but instead a cleartext password. DO NOT SHARE THIS TOKEN ONLINE ANYWHERE NEAR YOU API URL!!\n\nWhile optional, the IFTTT Maker token is really important because it's used to send notifications however you have configured previously according to README.md's instructions. GO HERE AND GET A TOKEN https://ifttt.com/maker_webhooks (you are to copy just the random text part of the given url once setup!!)\n\n\nEnter the required information, hit 'Write settings' and then quit and relaunch the application"
+            alert.addButton(withTitle: "Continue")
+            alert.runModal()
+            
+            
+        }
+    }
+    
+    @IBAction func saveConfiguration(_ sender: Any) {
+        let defaults = UserDefaults.standard
+        let newAPIKey = APIProtectionKeyTextField.stringValue
+        if (newAPIKey != "") {
+            defaults.set(newAPIKey, forKey: "protection_token")
+            defaults.set(makerAPIKeyTextField.stringValue, forKey: "ifttt_maker_key")
+            defaults.synchronize()
+            let alert = NSAlert.init()
+            
+            passwordToken = newAPIKey;
+            IFTTTMakeKey = makerAPIKeyTextField.stringValue;
+            
+            alert.messageText = "Saved"
+            alert.informativeText = "The API protection key and IFTTT maker key have been updated sucesfully and the server, if running, will begin using them."
+            alert.addButton(withTitle: "Dismiss")
+            alert.runModal()
+            
+        }else {
+           //an API key is required
+            let alert = NSAlert.init()
+            alert.messageText = "You need an API protection key"
+            alert.informativeText = "While technically possible to run the server without any password, it's a horrible idea so I'm not going to let you do that. Enter a valid API protection key"
+            alert.addButton(withTitle: "OK")
             alert.runModal()
         }
     }
     
-    
+    @IBAction func showGitHubReleases(_ sender: Any) {
+        NSWorkspace.shared().open(URL(string: "https://github.com/shusain93/OSXMessageProxy/releases")!)
+
+    }
     
     override var representedObject: Any? {
         didSet {
@@ -132,7 +176,7 @@ class ViewController: NSViewController {
             //Setup our send post.
             //Paramaters
             //Your post data needs the following values: participants and message. Each are strings. Participants is a comma seperate string of the recipients as you'd type them into the new message field in Message.app
-            //curl http://127.0.0.1:8735/send  -XPOST -d "participants=imessage,3033744343&message=It's me from the command line"
+            //curl http://127.0.0.1:8735/send  -XPOST -d "participants=imessage,81328581&message=It's me from the command line"
             apiServer?.addHandler(forMethod: "POST", path: "/send", request: GCDWebServerURLEncodedFormRequest.self, processBlock: {
                 request in
                 weak var weakConnector = connector;
@@ -188,8 +232,9 @@ class ViewController: NSViewController {
             apiServer?.start(withPort: 8735, bonjourName: "iMessage Proxy")
             if apiServer?.isRunning == true {
                 uiPrint("Ready at \(apiServer!.serverURL!)")
+                serverStatusText.stringValue = "Ready at \(apiServer!.serverURL!)"
             }else {
-                uiPrint("Couldn't start the webserver! Failing permenantly")
+                serverStatusText.stringValue = "Couldn't start the server! Too low port? Already taken?"
             }
             
             
