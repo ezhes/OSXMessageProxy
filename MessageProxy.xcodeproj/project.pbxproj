@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		222AB43A1E6A526C00700B13 /* messageSender.applescript in Sources */ = {isa = PBXBuildFile; fileRef = 222AB4391E6A526C00700B13 /* messageSender.applescript */; };
-		22DFF2371EB30A0B009B2E09 /* CONFIG.plist in Resources */ = {isa = PBXBuildFile; fileRef = 22DFF2361EB30A0B009B2E09 /* CONFIG.plist */; };
 		22FF3D051E67A45B00F2E70C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FF3D041E67A45B00F2E70C /* AppDelegate.swift */; };
 		22FF3D071E67A45B00F2E70C /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FF3D061E67A45B00F2E70C /* ViewController.swift */; };
 		22FF3D091E67A45B00F2E70C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 22FF3D081E67A45B00F2E70C /* Assets.xcassets */; };
@@ -171,7 +170,6 @@
 			files = (
 				22FF3D091E67A45B00F2E70C /* Assets.xcassets in Resources */,
 				22FF3D0C1E67A45B00F2E70C /* Main.storyboard in Resources */,
-				22DFF2371EB30A0B009B2E09 /* CONFIG.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
