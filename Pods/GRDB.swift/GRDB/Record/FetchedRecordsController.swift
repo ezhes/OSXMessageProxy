@@ -1,3 +1,4 @@
+import Foundation
 #if os(iOS)
     import UIKit
 #endif
@@ -959,6 +960,6 @@ private final class Item<T: RowConvertible> : RowConvertible, Equatable {
     }
 }
 
-private func ==<T>(lhs: Item<T>, rhs: Item<T>) -> Bool {
+private func ==<T> (lhs: Item<T>, rhs: Item<T>) -> Bool {
     return lhs.row == rhs.row
 }
