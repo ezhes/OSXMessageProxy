@@ -475,10 +475,10 @@ class DatabaseConstructor: NSObject {
                         print("Sending...")
                         
                         let senderName = getHumanName(handle_id: Int(handleID!))
-                        
                         //Build our notification sender
-                        let appURL = handleTable[Int(handleID!)]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? "name failure"
-                        self.sendNotification(title: senderName, contents: newMessage.value(named: "text"), appURL: appURL)
+                        let appURL = handleTable[Int(handleID!)]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? "Name Failure"
+                        let message = newMessage.value(named: "text") as? String ?? "Unsupported message content"
+                        self.sendNotification(title: senderName, contents: message, appURL: appURL)
                         
                     }
                 })
