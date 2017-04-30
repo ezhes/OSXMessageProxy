@@ -2,16 +2,16 @@ PODS:
   - GCDWebServer (3.3.3):
     - GCDWebServer/Core (= 3.3.3)
   - GCDWebServer/Core (3.3.3)
-  - GRDB.swift (0.105.0)
+  - GRDB.swift (0.106.1)
 
 DEPENDENCIES:
-  - GCDWebServer (~> 3.0)
+  - GCDWebServer (~> 3.3.3)
   - GRDB.swift
 
 SPEC CHECKSUMS:
   GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
-  GRDB.swift: a21d29acf4b3bde1aaabcaf76dc0a4b64cc96a12
+  GRDB.swift: 55f0c6d9c2cffa2330c7acf6b033732400322c18
 
-PODFILE CHECKSUM: ff1835e8527190e4784e84c9990680deaa484c37
+PODFILE CHECKSUM: fc17481326766715c5b7746e9957d2337dc129e6
 
 COCOAPODS: 1.0.1

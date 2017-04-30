@@ -259,7 +259,7 @@ class DatabaseConstructor: NSObject {
                 //Yes, let's add the new participant
                 let oldParticipants = oldConversation!.value(forKey: "IDs") as! String
                 //Update our exsisting conversation's parts
-                oldConversation!.setValue(oldParticipants + ", " + conversation.value(named: "id"), forKey: "IDs")
+                oldConversation!.setValue(oldParticipants + ", " + (conversation.value(named: "id") as! String).replacingOccurrences(of: "+1", with: ""), forKey: "IDs")
                 //Check if we have a display name built by us
                 if (oldConversation!.value(forKey: "has_manual_display_name") as? Bool == true) {
                     //Add the new person to the custom displayname

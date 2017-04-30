@@ -102,13 +102,21 @@ class ViewController: NSViewController {
                         }
                         let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath.replacingOccurrences(of: " ", with: "%20")
                         weakSelf?.uiPrint("\(request!.remoteAddressString!) -> serving attachment file://\(filePath)")
-                        let fileURL = URL(string: "file://\(filePath)")!//URL(string: "file://" + (attachment!.pathToFile! as NSString).expandingTildeInPath)!
-                        let data = NSData(contentsOf: fileURL) as Data!
-                        //We do, build our response
-                        let response = GCDWebServerDataResponse(data: data, contentType: attachment!.mimeType)!
-                        response.isGZipContentEncodingEnabled = true
-                        print("--> sending attachment")
-                        return response
+                        let fileURL = URL(string: "file://\(filePath)")!
+                        //Check if we can serve the file
+                        if (FileManager.default.fileExists(atPath: filePath)) {
+                            //We do, build our response
+                            let response = GCDWebServerFileResponse(file: filePath, isAttachment: false)
+                            response?.isGZipContentEncodingEnabled = true
+                            print("--> sending attachment")
+                            return response
+                        }else {
+                            //No, send 404
+                            let response = GCDWebServerDataResponse(html:"404 -- couldn't read file!")!
+                            response.statusCode = 404
+                            response.isGZipContentEncodingEnabled = true
+                            return response
+                        }
                     }else {
                         return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(String(describing: request?.query))")
                     }

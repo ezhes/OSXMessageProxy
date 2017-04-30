@@ -7,5 +7,5 @@ target 'MessageProxy' do
 
   # Pods for MessageProxy
   pod 'GRDB.swift'
-  pod "GCDWebServer", "~> 3.0"
+  pod "GCDWebServer", "~> 3.3.3"
 end
