@@ -71,6 +71,7 @@ class ViewController: NSViewController {
             alert.informativeText = "The API protection key and IFTTT maker key have been updated sucesfully and the server, if running, will begin using them."
             alert.addButton(withTitle: "Dismiss")
             alert.runModal()
+            print("Saved settings")
             
         }else {
            //an API key is required
