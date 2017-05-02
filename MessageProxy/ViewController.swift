@@ -31,8 +31,10 @@ class ViewController: NSViewController {
         if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
             versionText.stringValue = "v\(version)"
         }
-        //Check if we've configured already
         let defaults = UserDefaults.standard
+        //Setup SPARKLE updates
+        defaults.set(true, forKey: "SUAutomaticallyUpdate")
+        //Check if we've configured already
         if let apiProtectionKey = defaults.string(forKey: "protection_token") {
             APIProtectionKeyTextField.stringValue = apiProtectionKey
             passwordToken = apiProtectionKey
@@ -146,7 +148,6 @@ class ViewController: NSViewController {
                         }
                         let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath.replacingOccurrences(of: " ", with: "%20")
                         weakSelf?.uiPrint("\(request!.remoteAddressString!) -> serving attachment file://\(filePath)")
-                        let fileURL = URL(string: "file://\(filePath)")!
                         //Check if we can serve the file
                         if (FileManager.default.fileExists(atPath: filePath)) {
                             //We do, build our response

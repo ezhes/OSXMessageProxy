@@ -276,7 +276,7 @@ class DatabaseConstructor: NSObject {
                 conversationDictionaryRepresentation.setValue(conversation.value(named: "service"), forKey: "service")
                 let displayName = conversation.value(named: "display_name")
                 //Check if we have a display name to set
-                if (displayName as! String != "") {
+                if (displayName as? String != "") {
                     conversationDictionaryRepresentation.setValue(conversation.value(named: "display_name"), forKey: "display_name")
                     conversationDictionaryRepresentation.setValue(false, forKey: "has_manual_display_name") //The display name is a real named iMessage group and so it must be used as the send to in the client
                 }else {
@@ -463,7 +463,7 @@ class DatabaseConstructor: NSObject {
                 let handleTable = getHandlerConversationDictionary()
                 
                 //Now let's parse our messages
-                try messageNewMessageRows?.forEach({
+                messageNewMessageRows?.forEach({
                     newMessage in
                     //Mark all as sent pre-emptively incase we throw
                     lastMessageDate = newMessage.value(named: "date")
