@@ -138,7 +138,7 @@
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>
                                 <connections>
-                                    <action selector="showGitHubReleases:" target="XfG-lQ-9wD" id="uev-FA-z41"/>
+                                    <action selector="checkForUpdates:" target="aWb-PF-OuW" id="Zev-oH-DB1"/>
                                 </connections>
                             </button>
                             <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" allowsCharacterPickerTouchBarItem="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Rb3-xA-SFf">
@@ -185,6 +185,7 @@
                     </connections>
                 </viewController>
                 <customObject id="rPt-NT-nkU" userLabel="First Responder" customClass="NSResponder" sceneMemberID="firstResponder"/>
+                <customObject id="aWb-PF-OuW" customClass="SUUpdater"/>
             </objects>
             <point key="canvasLocation" x="75" y="603"/>
         </scene>
