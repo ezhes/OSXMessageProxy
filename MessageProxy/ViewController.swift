@@ -113,7 +113,17 @@ class ViewController: NSViewController {
                 request in
                 weak var weakSelf = self
                 weakSelf?.uiPrint("Client checked in")
-                return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(String(describing: request?.query))")
+                
+                let passwordTokenFromRequest = request?.query["t"] as? String
+                if (self.passwordToken == passwordTokenFromRequest) {
+                    //We have a valid token'd request. That means telling them the server version is safe. This is usefull for letting the client know if it can communicate properly
+                    if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+                    return GCDWebServerDataResponse(html:"{\"version\" : \(version)}")
+                    }
+                    
+                }
+                //Invalid/old probe. Give the old response which tells them we're here but not what we're at
+                 return GCDWebServerDataResponse(html:"Invalid paramaters<br>\(String(describing: request?.query))")
             })
             
             apiServer?.addHandler(forMethod: "GET", path: "/conversations", request: GCDWebServerRequest.self, processBlock: {

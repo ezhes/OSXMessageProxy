@@ -19,11 +19,14 @@ This setup reads the SQL database that the OSX iMessage app uses and so theoreti
 
 To achieve notifications for the AndromedaB application I have setup IFTTT notifications through the maker API. You need to generate a token [here](https://ifttt.com/maker_webhooks). [Download the latest release](https://github.com/shusain93/OSXMessageProxy/releases). Launch the application using the `StartIMProxy.command` (the script must be in the same folder as the application). Fill in your token from IFTTT and also add a protection key. This protection key is just a password/API key for your server so don't ever share it otherwise nasties can steal your messages! Keep the application in the same folder as `StartIMProxy.command` and don't rename the application without also first changing the script. You will use this short script (you can double click, may have to `chmod +x` it first) to launch and keep the server running all the time because it's not 100% perfect and still needs a watchdog to keep it alive 24/7. When you run the script (***never run through the app!***) you should see some text go by fast and then eventually `Ready at http://x.x.x.x:8735` in both the console and in the UI. If you see this, your server is running correctly however you still need to configure port forwarding and potentially a domain. You will need to accept the permissions request for contacts because otherwise you will have no names for anyone (duh)
 
-Once you've got the server running, configure an IFTTT maker recipe with the event name as `imessageRecieved`
+Once you've got the server running, configure an IFTTT maker recipe with the event name as `imessageRecieved` (***note that this is spelled wrong, sorry. I spelled it the first time so now it's legacy***)
 
 1. `Value1`: this is the from field
 2. `Value2`: this is the message content
 3. `Value3`: this is an advanced field which contains a search keyword which if included as the link field of a Pushbullet link push in the format `http://i.eu/{{Value3}}/` (copy and paste!) it will automatically launch the application to the correct conversation if clicked as a notification. http://i.eu will never resolve to anything (on char TLDs are banned) but it has the advantage of being very short so it won't take up much space in the notification tray. 
+
+Here is an example configuration. You can set this up however you like but this works well for me (3739 times well)
+![config for ifttt](Screenshots/ifttconfig.png)
 
 ### Building from source
 
