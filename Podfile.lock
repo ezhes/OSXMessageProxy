@@ -1,4 +1,5 @@
 PODS:
+  - BlueSocket (0.12.35)
   - GCDWebServer (3.3.3):
     - GCDWebServer/Core (= 3.3.3)
   - GCDWebServer/Core (3.3.3)
@@ -6,15 +7,17 @@ PODS:
   - Sparkle (1.17.0)
 
 DEPENDENCIES:
+  - BlueSocket
   - GCDWebServer (~> 3.3.3)
   - GRDB.swift
   - Sparkle
 
 SPEC CHECKSUMS:
+  BlueSocket: 4cdbbcd62b2b02897817b689477f4d4f3fa54944
   GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
   GRDB.swift: 55f0c6d9c2cffa2330c7acf6b033732400322c18
   Sparkle: ccfb47699feea7b40b51cf3176f69404e5b1da6c
 
-PODFILE CHECKSUM: b3c602c3b3781e1a3053ffe3570e571c0d1f9d6d
+PODFILE CHECKSUM: afb44b5e029f44465ae7fe2120d9b09a11f72180
 
 COCOAPODS: 1.2.1

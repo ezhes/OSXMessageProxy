@@ -97,7 +97,7 @@ class ViewController: NSViewController {
     func setupWebserver() {
         do {
             let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
-            let connector = try DatabaseConstructor(datebaseLocation: messagesDatabaseLocation,iftttMakerToken: IFTTTMakeKey);
+            let connector = try DatabaseConstructor(datebaseLocation: messagesDatabaseLocation,iftttMakerToken: IFTTTMakeKey, liveMessagingSocket: SocketServer(passwordProtectionToken: passwordToken));
             
             //Set log level warning to stop console spam
             GCDWebServer.setLogLevel(3)

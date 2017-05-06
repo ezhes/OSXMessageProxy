@@ -89,11 +89,13 @@ strip_invalid_archs() {
 
 
 if [[ "$CONFIGURATION" == "Debug" ]]; then
+  install_framework "$BUILT_PRODUCTS_DIR/BlueSocket/Socket.framework"
   install_framework "$BUILT_PRODUCTS_DIR/GCDWebServer/GCDWebServer.framework"
   install_framework "$BUILT_PRODUCTS_DIR/GRDB.swift/GRDB.framework"
   install_framework "${PODS_ROOT}/Sparkle/Sparkle.framework"
 fi
 if [[ "$CONFIGURATION" == "Release" ]]; then
+  install_framework "$BUILT_PRODUCTS_DIR/BlueSocket/Socket.framework"
   install_framework "$BUILT_PRODUCTS_DIR/GCDWebServer/GCDWebServer.framework"
   install_framework "$BUILT_PRODUCTS_DIR/GRDB.swift/GRDB.framework"
   install_framework "${PODS_ROOT}/Sparkle/Sparkle.framework"

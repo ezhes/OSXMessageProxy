@@ -1,0 +1,6 @@
+framework module Socket {
+  umbrella header "BlueSocket-umbrella.h"
+
+  export *
+  module * { export * }
+}

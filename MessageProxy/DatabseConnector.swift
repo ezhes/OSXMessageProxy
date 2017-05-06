@@ -11,20 +11,26 @@ import GRDB
 import Contacts
 
 class DatabaseConstructor: NSObject {
+    ///// DATABASE MANUAL CONFIGURATION
+    private var DATABASE_PROBE_INTERVAL = 0.5 //How often should we check the database for new messages? Lower values mean better socket update speeds but uses more server processing power. Fast server? Use a lower probe value. 0.5 is about as fast as I've tried because it's plenty good
+    
+    
+    
+    
     private var databaseQueue:DatabaseQueue?; //Our database
     private var contactsDatabase:[String:String]? //our cached database of contacts
     private var messageQueue:[SendableMessage] = [] //Our queue of messages to send
-    
+    private var socketServer:SocketServer?
     private var IFTTT_token:String = ""
     /// Make an init with a special database. Should be used!
     ///
     /// - Parameter datebaseLocation: The path to the iMessage database
-    init(datebaseLocation:String, iftttMakerToken:String) throws {
+    init(datebaseLocation:String, iftttMakerToken:String,liveMessagingSocket:SocketServer) throws {
         super.init()
         //store our notifier token
         IFTTT_token = iftttMakerToken
         databaseQueue =  try DatabaseQueue(path: datebaseLocation)
-        
+        socketServer = liveMessagingSocket
         //Prepare our timer
         //Setup our lastFoundMessage
         let lastMessageROWIDRows = try databaseQueue?.inDatabase { db -> [Row]? in
@@ -36,7 +42,7 @@ class DatabaseConstructor: NSObject {
             //Grab the only row's ROWID and store it as our last reference
             lastMessageDate = lastMessageROWIDRows![0].value(named: "date")
             //Now we are ready to fire our timer
-            _ = Timer.scheduledTimer(timeInterval: 2, target: self, selector: #selector(self.checkForNewMessages), userInfo: nil, repeats: true);
+            _ = Timer.scheduledTimer(timeInterval: DATABASE_PROBE_INTERVAL, target: self, selector: #selector(self.checkForNewMessages), userInfo: nil, repeats: true);
         }else {
             print("[ERROR!] COULD NOT GET A LAST ROWID. SELECT ROWID from message ORDER BY date DESC LIMIT 1 didn't return the correct ammount of rows.")
         }
@@ -150,20 +156,14 @@ class DatabaseConstructor: NSObject {
         }
     }
     
-    /// Get a parsed array of messages
+    
+    /// Convert an SQL message row into a dictionary
     ///
     /// - Parameters:
-    ///   - forChatID: The chat to read from
-    ///   - messageLimit: The last x messages to read
-    /// - Returns: An array of messages (as dictionaries!) with the relevant information stored in them
-    func getMessages(forChatID:Int, messageLimit:Int = 100) -> NSArray {
-        //Cache a lookup handle table
-        let handleTable = getHandlerConversationDictionary()
-        let messageBundle = NSMutableArray()
-        let conversationMessages = getDatabseMessages(forChatID: forChatID,messageLimit: messageLimit)
-        
-        conversationMessages?.forEach({
-            message in
+    ///   - message: The row
+    ///   - handleTable: A reference to an internal table of handles to convert to human
+    /// - Returns: A properly stuffed Swift accessable version
+    func convertMessageToDictionary(message:Row,handleTable:[Int:String]) -> NSMutableDictionary {
             let messageDictionaryRepresentation = NSMutableDictionary()
             messageDictionaryRepresentation.setValue(message.value(named: "message_id"), forKey: "message_id")
             messageDictionaryRepresentation.setValue(message.value(named: "guid"), forKey: "guid")
@@ -178,7 +178,8 @@ class DatabaseConstructor: NSObject {
             messageDictionaryRepresentation.setValue(message.value(named: "date_read"), forKey: "date_read")
             messageDictionaryRepresentation.setValue(message.value(named: "date_delivered"), forKey: "date_delivered")
             messageDictionaryRepresentation.setValue(message.value(named: "is_from_me"), forKey: "is_from_me")
-            
+            messageDictionaryRepresentation.setValue(message.value(named: "chat_id"), forKey: "chat_id")
+            messageDictionaryRepresentation.setValue(message.value(named: "is_sent"), forKey: "is_sent")
             //Setup attachemnts
             let attachmentID = message.value(named: "attachment_id")
             if (attachmentID != nil) {
@@ -189,7 +190,25 @@ class DatabaseConstructor: NSObject {
             }else {
                 messageDictionaryRepresentation.setValue(false, forKey: "has_attachments")
             }
-            messageBundle.add(messageDictionaryRepresentation)
+
+        return messageDictionaryRepresentation
+    }
+    
+    /// Get a parsed array of messages
+    ///
+    /// - Parameters:
+    ///   - forChatID: The chat to read from
+    ///   - messageLimit: The last x messages to read
+    /// - Returns: An array of messages (as dictionaries!) with the relevant information stored in them
+    func getMessages(forChatID:Int, messageLimit:Int = 100) -> NSArray {
+        //Cache a lookup handle table
+        let handleTable = getHandlerConversationDictionary()
+        let messageBundle = NSMutableArray()
+        let conversationMessages = getDatabseMessages(forChatID: forChatID,messageLimit: messageLimit)
+        
+        conversationMessages?.forEach({
+            message in
+            messageBundle.add(convertMessageToDictionary(message: message, handleTable: handleTable))
         })
         
         //Reverse our array since the datasource SQL gives us newest on top
@@ -197,23 +216,19 @@ class DatabaseConstructor: NSObject {
     }
     
     
-    /// Get a JSON representation of the messages for a chat
+    /// Convert a message array to JSON
     ///
-    /// - Parameters:
-    ///   - forChatID: The chat to read from
-    ///   - messageLimit: The last x messages to read
-    /// - Returns: A string of JSON
-    func getJSONMessages(forChatID:Int, messageLimit:Int = 100) ->String {
-        let messageBundle = getMessages(forChatID: forChatID, messageLimit: messageLimit)
+    /// - Parameter array: An array of dictionaries (which are messages)
+    /// - Returns: A JSON string representing the data sent in
+    func convertMessageArrayToJSON(array:NSArray) -> String {
         do {
-            
             //Convert to Data
-            let jsonData = try JSONSerialization.data(withJSONObject: messageBundle, options: JSONSerialization.WritingOptions.prettyPrinted)
+            let jsonData = try JSONSerialization.data(withJSONObject: array)
             
             //Convert back to string
             let JSONString = String(data: jsonData, encoding: String.Encoding.utf8)
             if (JSONString != nil) {
-                print(JSONString!)
+
                 //Remove the object replacement characters from our string. These come from attachments
                 return JSONString!.replacingOccurrences(of: "\u{FFFC}", with: "")
             }else {
@@ -225,6 +240,17 @@ class DatabaseConstructor: NSObject {
             //Failed to serialize?
             return ""
         }
+    }
+    
+    /// Get a JSON representation of the messages for a chat
+    ///
+    /// - Parameters:
+    ///   - forChatID: The chat to read from
+    ///   - messageLimit: The last x messages to read
+    /// - Returns: A string of JSON
+    func getJSONMessages(forChatID:Int, messageLimit:Int = 100) ->String {
+        let messageBundle = getMessages(forChatID: forChatID, messageLimit: messageLimit)
+        return convertMessageArrayToJSON(array: messageBundle)
     }
     
     
@@ -315,7 +341,6 @@ class DatabaseConstructor: NSObject {
             //Convert back to string
             let JSONString = String(data: jsonData, encoding: String.Encoding.utf8)
             if (JSONString != nil) {
-                print(JSONString!)
                 //Remove the object replacement characters from our string. These come from attachments
                 return JSONString!.replacingOccurrences(of: "\u{FFFC}", with: "")
             }else {
@@ -366,19 +391,22 @@ class DatabaseConstructor: NSObject {
             //Set up the arguments!
             task.arguments = [Bundle.main.path(forResource: "messageSender", ofType: "scpt")!,self.messageQueue[0].messageContents!,self.messageQueue[0].recipients!]
             task.launch()
-            //Wait a bit before we check that it's been sent
+            //Wait a bit before we check that it's been sent so that our message bundle is most accurate
+            sleep(1)
             var messageHasBeenSent = false
+            var messageRowIfSent:Row?
             //We'll check 5 times that our message has sent
             for _ in 0...12 {
                 do {
                     let _ = try self.databaseQueue?.inDatabase { db -> [Row]? in
-                        let rows = try Row.fetchAll(db, "SELECT message.text from message where message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\" ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent
+                        let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id LEFT JOIN message_attachment_join on message_attachment_join.message_id = chat_message_join.message_id LEFT JOIN attachment on attachment.ROWID = message_attachment_join.attachment_id where (message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\")  ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent. We're also pulling a huge amount of data here because if we did send we want to have a full valid message context
                         rows.forEach({
                             message in
                             //Check if we're in our sent messages
                             if (message.value(named: "text") == self.messageQueue[0].messageContents!) {
                                 //Yes, flag as done
                                 messageHasBeenSent = true
+                                messageRowIfSent = message
                             }
                         })
                         return rows
@@ -395,9 +423,13 @@ class DatabaseConstructor: NSObject {
             }
             if (messageHasBeenSent) {
                 //We've been sent.
+                //Let the socket users know that some message with the following text was sent???
+                 let swiftyMessage = self.convertMessageToDictionary(message: messageRowIfSent!, handleTable: [:])
+                    self.socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"messageSent\", \"content\": \(self.convertMessageArrayToJSON(array: [swiftyMessage]))}")
                 self.messageQueue.remove(at: 0)
                 print(self.messageQueue)
                 print("[Message Send] Our message has been sent, dequeing")
+                
             }else {
                 //Message failed to send after 13 seconds.
                 self.messageQueue[0].sendFailures+=1;
@@ -406,6 +438,9 @@ class DatabaseConstructor: NSObject {
                     DispatchQueue.main.async {
                         self.sendNotification(title: "Failed to send message", contents: self.messageQueue[0].messageContents!, appURL: self.messageQueue[0].recipients!)
                     }
+                    let jsonSafeMessageString = self.messageQueue[0].messageContents?.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
+                    self.socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"messageSendFailure\", \"content\": \"\(jsonSafeMessageString ?? "")\"}")
+                    
                     print("[Message Send] Permentally failed to send message. Notifying. Dequeded message")
                     self.messageQueue.remove(at: 0)
                     print(self.messageQueue)
@@ -448,11 +483,21 @@ class DatabaseConstructor: NSObject {
     
     //Holds a reference to the last rowid of the message we've seen. Used to know when we have to notify about new messages.
     var lastMessageDate = 0;
+    //We only want one timer but we don't want a heartbeat every two seconds because that's too much
+    var heartbeatCounter = 0;
     /// Called by a global timer which checks if we have any new messages
     func checkForNewMessages() {
+        if (heartbeatCounter == 4){
+            //Send our heartbeat. Excessive? yeah this will only go when the connections are valid and it's a cheap socket.
+            socketServer?.sendSocketBroadcast(jsonMessage: "TCPALIVE")
+            heartbeatCounter = 0
+        }else {
+            //Not ready yet but we'll increment
+            heartbeatCounter+=1
+        }
         do {
             let messageNewMessageRows = try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from message WHERE date > \(lastMessageDate) ORDER BY date LIMIT 25") //select all our messages since our last notification round
+                let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id WHERE date > \(lastMessageDate) ORDER BY date LIMIT 25") //select all our messages since our last notification round
                 return rows;
             }
             
@@ -461,7 +506,6 @@ class DatabaseConstructor: NSObject {
                 print("Got \(messageNewMessageRows!.count) new messagess. Current last is \(lastMessageDate)")
                 //Cache a lookup handle table because we need it now
                 let handleTable = getHandlerConversationDictionary()
-                
                 //Now let's parse our messages
                 messageNewMessageRows?.forEach({
                     newMessage in
@@ -469,11 +513,12 @@ class DatabaseConstructor: NSObject {
                     lastMessageDate = newMessage.value(named: "date")
                     //Store our message handle id because we use it often
                     let handleID = newMessage.value(named: "handle_id") as? Int64
-                    //Make sure we didn't send our message. Notifying about a SENT message is stupid
+                    let swiftyMessage = convertMessageToDictionary(message: newMessage, handleTable: handleTable)
                     
+                    //Make sure we didn't send our message. Notifying about a SENT message is stupid
                     if (newMessage.value(named: "is_from_me") == 0) {
                         print("Sending...")
-                        
+                        socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"newMessage\", \"content\" :\(convertMessageArrayToJSON(array: [swiftyMessage]))}")
                         let senderName = getHumanName(handle_id: Int(handleID!))
                         //Build our notification sender
                         let appURL = handleTable[Int(handleID!)]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? "Name Failure"
@@ -482,6 +527,9 @@ class DatabaseConstructor: NSObject {
                         
                     }
                 })
+                
+                //Send our updated conversation table LAST to not jam the socket
+                socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"conversations\", \"content\" :\(getJSONConversations())}")
             }
             
             

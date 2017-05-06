@@ -6,7 +6,7 @@ mkdir -p ~/OSXMessageProxyLogs/crashes
 while true; do 
 	echo "Starting server at `date`" >>  ~/OSXMessageProxyLogs/`date +%Y-%m-%d`.txt;
 	#Launch MessageProxy but filter out the adressbook spam
-	MessageProxy.app/Contents/MacOS/MessageProxy 2>&1 | grep -v "dynamic accessors" | tee -a ~/OSXMessageProxyLogs/`date +%Y-%m-%d`.txt;
+	MessageProxy.app/Contents/MacOS/MessageProxy 2>&1 >> ~/OSXMessageProxyLogs/`date +%Y-%m-%d`.txt;
 	echo "Server stopped/crashed at `date`" >>  ~/OSXMessageProxyLogs/`date +%Y-%m-%d`.txt;
 	#We quit, check for crash reports, and copy them
 	cp ~/Library/Logs/DiagnosticReports/MessageProxy* ~/OSXMessageProxyLogs/crashes
