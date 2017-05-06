@@ -71,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				22DFF2361EB30A0B009B2E09 /* CONFIG.plist */,
+				22FF3D0D1E67A45B00F2E70C /* Info.plist */,
 				22FF3D151E6A912100F2E70C /* MessageProxy.entitlements */,
 				222AB4391E6A526C00700B13 /* messageSender.applescript */,
 				22FF3D041E67A45B00F2E70C /* AppDelegate.swift */,
@@ -79,7 +80,6 @@
 				221596AD1EBD9B260005A670 /* SocketServer.swift */,
 				22FF3D081E67A45B00F2E70C /* Assets.xcassets */,
 				22FF3D0A1E67A45B00F2E70C /* Main.storyboard */,
-				22FF3D0D1E67A45B00F2E70C /* Info.plist */,
 			);
 			path = MessageProxy;
 			sourceTree = "<group>";
