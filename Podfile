@@ -9,4 +9,5 @@ target 'MessageProxy' do
   pod 'GRDB.swift'
   pod "GCDWebServer", "~> 3.3.3"
   pod "Sparkle"
+  pod 'BlueSocket'
 end
