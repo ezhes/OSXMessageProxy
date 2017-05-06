@@ -1,1 +1,3 @@
 MessageProxy/.build/* linguist-vendored
+MessageProxy/MessageProxy/.build/* linguist-vendored
+*.sample linguist-generated=true

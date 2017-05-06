@@ -157,7 +157,7 @@ class ViewController: NSViewController {
                         if (attachment?.pathToFile == nil) {
                             return GCDWebServerDataResponse(html:"Couldn't find attachment<br>\(String(describing: request?.query))")
                         }
-                        let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath.replacingOccurrences(of: " ", with: "%20")
+                        let filePath = (attachment!.pathToFile! as NSString).expandingTildeInPath//.replacingOccurrences(of: " ", with: "%20")
                         weakSelf?.uiPrint("\(request!.remoteAddressString!) -> serving attachment file://\(filePath)")
                         //Check if we can serve the file
                         if (FileManager.default.fileExists(atPath: filePath)) {
