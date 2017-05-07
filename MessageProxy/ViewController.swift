@@ -32,8 +32,6 @@ class ViewController: NSViewController {
             versionText.stringValue = "v\(version)"
         }
         let defaults = UserDefaults.standard
-        //Setup SPARKLE updates
-        defaults.set(true, forKey: "SUAutomaticallyUpdate")
         //Check if we've configured already
         if let apiProtectionKey = defaults.string(forKey: "protection_token") {
             APIProtectionKeyTextField.stringValue = apiProtectionKey
@@ -118,7 +116,7 @@ class ViewController: NSViewController {
                 if (self.passwordToken == passwordTokenFromRequest) {
                     //We have a valid token'd request. That means telling them the server version is safe. This is usefull for letting the client know if it can communicate properly
                     if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-                    return GCDWebServerDataResponse(html:"{\"version\" : \(version)}")
+                    return GCDWebServerDataResponse(html:"{\"version\" : \"\(version)\"}")
                     }
                     
                 }
