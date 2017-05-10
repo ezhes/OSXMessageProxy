@@ -359,22 +359,28 @@ class DatabaseConstructor: NSObject {
     ///
     /// - Parameters:
     ///   - toRecipients: A human or phone number list of comma seperated phone numbers/emails/group nam to send to
+    ///   - participiantListIsCustom: If the participiant list is custom built by us (i.e. to make human readable) it is not a raw participiant list. This being false denotes that the chat has been named in the database, not by us
     ///   - withMessage: The message to send
-    func sendMessage(toRecipients:String,withMessage:String) {
+    func sendMessage(toRecipients:String,withMessage:String,participiantListIsCustom:Bool) {
+
         //Create our queue-able message
         let newMessage = SendableMessage()
         newMessage.messageContents = withMessage.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) //we need to trim trailing white space/new lines otherwise the comparator fails and we flood the with messages. The iMessage client filters it out when we send it in so we HAVE to do this
         newMessage.recipients = toRecipients;
+        
+        //Determine our send alogrithim. If we have not generated a name post processing or there are multiple names (CSV) then we need to use UI automation
+        let shouldUseUIAutomation = toRecipients.contains(", ") || participiantListIsCustom == false
         //..and send it. This is the user friendly way and we need to make a packet to send it
-        sendMessage(message: newMessage)
+        sendMessage(message: newMessage, usingUIAutomation:shouldUseUIAutomation)
         
     }
     
     
     /// Send a message object safely. This is safe to use for resending messages
     ///
+    /// - Parameter usingUIAutomation: If UI automation should be used to send the message. UI automation MUST be used if the message is a group chat.
     /// - Parameter message: The SendableMessage to send
-    func sendMessage(message:SendableMessage) {
+    func sendMessage(message:SendableMessage, usingUIAutomation:Bool) {
         messageQueue.append(message)
         DispatchQueue.global().async {
             [unowned self ] in
@@ -389,7 +395,7 @@ class DatabaseConstructor: NSObject {
             let task = Process()
             task.launchPath = "/usr/bin/osascript"
             //Set up the arguments!
-            task.arguments = [Bundle.main.path(forResource: "messageSender", ofType: "scpt")!,self.messageQueue[0].messageContents!,self.messageQueue[0].recipients!]
+            task.arguments = [Bundle.main.path(forResource: "messageSender", ofType: "scpt")!,self.messageQueue[0].messageContents!,self.messageQueue[0].recipients!, usingUIAutomation.description]
             task.launch()
             //Wait a bit before we check that it's been sent so that our message bundle is most accurate
             sleep(1)
@@ -448,7 +454,7 @@ class DatabaseConstructor: NSObject {
                     print("[Message Send] Message send failed. Trying \(self.messageQueue[0].sendFailures)/3")
                     self.messageQueue.remove(at: 0) //we need to remove here since when we recall we actually add another in the queue so ???
                     //Recursively retry. We have to call this one instead because if we re create we lose .sendFailures
-                    self.sendMessage(message: message)
+                    self.sendMessage(message: message, usingUIAutomation: usingUIAutomation)
                 }
             }
         }

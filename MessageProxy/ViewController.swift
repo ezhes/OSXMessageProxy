@@ -197,11 +197,13 @@ class ViewController: NSViewController {
                     let participiants = formRequest.arguments["participants"] as? String
                     let message = formRequest.arguments["message"] as? String
                     let passwordTokenFromRequest = formRequest.arguments["t"] as? String
+                    let hasCustomName = formRequest.arguments["hasCustomName"] as? String
                     //Do we have the correct paramaters? (are they set) and do we have the password?
                     if (participiants != nil && message != nil && self.passwordToken == passwordTokenFromRequest) {
                         //Yes! Ask our controller to send a message
                         weakSelf?.uiPrint("\(request!.remoteAddressString!) -> sending \(participiants!) :: \(message!) ")
-                        weakConnector?.sendMessage(toRecipients: participiants!, withMessage: message!)
+                        let hasCustomNameBool = !(hasCustomName == "false") //We have to do this really disgusting thing for backwards compatibility. If it's anything but false then we play it safe and send it the ui automator way
+                        weakConnector?.sendMessage(toRecipients: participiants!, withMessage: message!, participiantListIsCustom: hasCustomNameBool)
                         return GCDWebServerDataResponse(html:"OK: \(participiants!) :: \(message!)")
                     }
                     
