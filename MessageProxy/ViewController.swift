@@ -202,7 +202,7 @@ class ViewController: NSViewController {
                     if (participiants != nil && message != nil && self.passwordToken == passwordTokenFromRequest) {
                         //Yes! Ask our controller to send a message
                         weakSelf?.uiPrint("\(request!.remoteAddressString!) -> sending \(participiants!) :: \(message!) ")
-                        let hasCustomNameBool = !(hasCustomName == "false") //We have to do this really disgusting thing for backwards compatibility. If it's anything but false then we play it safe and send it the ui automator way
+                        let hasCustomNameBool = hasCustomName == "true" //A true here means that we don't have a group conversation (with a name!) AND the client is telling us this. False means either the client is too old or it's a named chat
                         weakConnector?.sendMessage(toRecipients: participiants!, withMessage: message!, participiantListIsCustom: hasCustomNameBool)
                         return GCDWebServerDataResponse(html:"OK: \(participiants!) :: \(message!)")
                     }

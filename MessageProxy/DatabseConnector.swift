@@ -369,7 +369,7 @@ class DatabaseConstructor: NSObject {
         newMessage.recipients = toRecipients;
         
         //Determine our send alogrithim. If we have not generated a name post processing or there are multiple names (CSV) then we need to use UI automation
-        let shouldUseUIAutomation = toRecipients.contains(", ") || participiantListIsCustom == false
+        let shouldUseUIAutomation = toRecipients.contains(", ") || participiantListIsCustom == false //if it's false that means there was already a name and we didn't modify it
         //..and send it. This is the user friendly way and we need to make a packet to send it
         sendMessage(message: newMessage, usingUIAutomation:shouldUseUIAutomation)
         
