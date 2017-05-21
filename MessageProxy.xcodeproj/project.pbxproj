@@ -21,7 +21,6 @@
 /* Begin PBXFileReference section */
 		221596AD1EBD9B260005A670 /* SocketServer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SocketServer.swift; sourceTree = "<group>"; };
 		222AB4391E6A526C00700B13 /* messageSender.applescript */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.applescript; path = messageSender.applescript; sourceTree = "<group>"; };
-		22DFF2361EB30A0B009B2E09 /* CONFIG.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = CONFIG.plist; sourceTree = "<group>"; };
 		22FF3D011E67A45B00F2E70C /* MessageProxy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MessageProxy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		22FF3D041E67A45B00F2E70C /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		22FF3D061E67A45B00F2E70C /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
@@ -70,7 +69,6 @@
 		22FF3D031E67A45B00F2E70C /* MessageProxy */ = {
 			isa = PBXGroup;
 			children = (
-				22DFF2361EB30A0B009B2E09 /* CONFIG.plist */,
 				22FF3D0D1E67A45B00F2E70C /* Info.plist */,
 				22FF3D151E6A912100F2E70C /* MessageProxy.entitlements */,
 				222AB4391E6A526C00700B13 /* messageSender.applescript */,
