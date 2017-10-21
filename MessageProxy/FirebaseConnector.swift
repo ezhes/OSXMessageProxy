@@ -35,6 +35,7 @@ class FirebaseConnector : NSObject {
                 print("[Firebase]: auth √ \(user!)")
             }
         }*/
+
     }
     
     func startAuthentication() {
@@ -59,7 +60,7 @@ class FirebaseConnector : NSObject {
             
             if snapshot.hasChild("conversations"){
                 fprint("Ready.")
-                self.userTableReference.observe(.value, with: { snapshot in
+                self.userTableReference.observeSingleEvent(of: .value, with: { snapshot in
                     //fprint(snapshot.value)
                 })
             }else{
@@ -71,15 +72,32 @@ class FirebaseConnector : NSObject {
             
             
         })
-        
-        //print("[Firebase]: \(ref.child("tesa").value(forKey: "test???"))")
+    }
+    
+    func getLastMessageRowID(callback:@escaping (Bool, String, Int)->Void) {
+        self.userTableReference.child("metadata").observeSingleEvent(of: .value, with: { snapshot in
+            if !snapshot.exists() {
+                // handle data not found
+                callback(false,"Couldn't retrive metadata packet",-111)
+                return
+            }
+            let metadata = snapshot.value as! [String: Any]
+            callback(true,"",metadata["last_message"] as! Int)
+        })
+    }
+    
+    func addMessage(message:NSDictionary,id:Int,date:Int) {
+        fprint("updating..")
+        userTableReference.child("messages").updateChildValues(["\(id)" : message])
+        userTableReference.child("metadata").updateChildValues(["last_message" : date])
+        fprint("done")
     }
     
     func createUserStructure() {
         userTableReference.child("conversations").setValue(["__meta_prepared" : true])
         userTableReference.child("messages").setValue(["__meta_prepared" : true])
         userTableReference.child("outbox").setValue(["__meta_prepared" : true])
-        userTableReference.child("metadata").setValue(["__meta_prepared" : true])
+        userTableReference.child("metadata").setValue(["__meta_prepared" : true,"last_message" : -1])
     }
     func updateConversations(conversation: NSArray) {
         fprint("updating..")
@@ -91,7 +109,7 @@ class FirebaseConnector : NSObject {
 }
 
 func fprint(_ value: Any?) {
-    let string = "[Firebase] \(value ?? "nil")"
+    let string = "\(value ?? "nil")"
     string.enumerateLines { (line, _) in
         print("[Firebase] \(line)")
     }
