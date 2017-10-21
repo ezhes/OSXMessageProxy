@@ -23,6 +23,8 @@ class ViewController: NSViewController {
     var IFTTTMakeKey = "" //The IFTTT make key to use so we can easily send notifications anywhere
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        let fb = FirebaseConnector()
         // Do any additional setup after loading the view.
 		if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
 			versionText.stringValue = "v\(version)"
