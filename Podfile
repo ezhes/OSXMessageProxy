@@ -10,4 +10,5 @@ target 'MessageProxy' do
   pod "GCDWebServer", "~> 3.3.3"
   pod "Sparkle"
   pod 'BlueSocket'
+  pod 'FirebaseCommunity/Database'
 end
