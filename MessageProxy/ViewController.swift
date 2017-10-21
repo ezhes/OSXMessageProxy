@@ -39,14 +39,12 @@ class ViewController: NSViewController {
 			IFTTTMakeKey = defaults.string(forKey: "ifttt_maker_key") ?? "NO_MAKER_KEY_PROVIDED"
 			makerAPIKeyTextField.stringValue = IFTTTMakeKey
 			//We've loaded the needed data, let's go
-            firebaseConnector = FirebaseConnector(callback: {success,errorMessage in
-                if success {
-                    self.setupWebserver()
-                }else {
-                    print("Failed to start::: \(errorMessage)")
-                }
-            })
-            firebaseConnector!.startAuthentication()
+            self.setupWebserver()
+            
+            let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
+            do {let connector = try FirebaseDatabaseConnector(datebaseLocation: messagesDatabaseLocation);} catch {}
+            
+            
 		}else {
 			//They didn't configure correctly
 			let alert = NSAlert.init()
@@ -107,9 +105,7 @@ class ViewController: NSViewController {
         do {
             let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
             let connector = try DatabaseConstructor(datebaseLocation: messagesDatabaseLocation,iftttMakerToken: IFTTTMakeKey, liveMessagingSocket: SocketServer(passwordProtectionToken: passwordToken));
-            
-        firebaseConnector?.updateConversations(conversation: connector.getConversations())
-            
+                        
             //Set log level warning to stop console spam
             GCDWebServer.setLogLevel(3)
             
