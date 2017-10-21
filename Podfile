@@ -11,4 +11,5 @@ target 'MessageProxy' do
   pod "Sparkle"
   pod 'BlueSocket'
   pod 'FirebaseCommunity/Database'
+  pod 'FirebaseCommunity/Auth'
 end
