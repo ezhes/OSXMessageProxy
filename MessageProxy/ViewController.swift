@@ -21,10 +21,11 @@ class ViewController: NSViewController {
     
     var passwordToken = "" //the constant, unencrypted password. Doesn't save us from replay, just endpoint leackage
     var IFTTTMakeKey = "" //The IFTTT make key to use so we can easily send notifications anywhere
+    var firebaseConnector:FirebaseConnector?
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        let fb = FirebaseConnector()
+        
         // Do any additional setup after loading the view.
 		if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
 			versionText.stringValue = "v\(version)"
@@ -38,7 +39,14 @@ class ViewController: NSViewController {
 			IFTTTMakeKey = defaults.string(forKey: "ifttt_maker_key") ?? "NO_MAKER_KEY_PROVIDED"
 			makerAPIKeyTextField.stringValue = IFTTTMakeKey
 			//We've loaded the needed data, let's go
-			setupWebserver()
+            firebaseConnector = FirebaseConnector(callback: {success,errorMessage in
+                if success {
+                    self.setupWebserver()
+                }else {
+                    print("Failed to start::: \(errorMessage)")
+                }
+            })
+            firebaseConnector!.startAuthentication()
 		}else {
 			//They didn't configure correctly
 			let alert = NSAlert.init()
@@ -99,6 +107,8 @@ class ViewController: NSViewController {
         do {
             let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
             let connector = try DatabaseConstructor(datebaseLocation: messagesDatabaseLocation,iftttMakerToken: IFTTTMakeKey, liveMessagingSocket: SocketServer(passwordProtectionToken: passwordToken));
+            
+        firebaseConnector?.updateConversations(conversation: connector.getConversations())
             
             //Set log level warning to stop console spam
             GCDWebServer.setLogLevel(3)

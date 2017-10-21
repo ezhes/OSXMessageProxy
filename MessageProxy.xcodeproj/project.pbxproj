@@ -80,9 +80,9 @@
 				22FF3D061E67A45B00F2E70C /* ViewController.swift */,
 				22FF3D131E67C4FA00F2E70C /* DatabseConnector.swift */,
 				221596AD1EBD9B260005A670 /* SocketServer.swift */,
+				221FC8481F9AFD8B00732D96 /* FirebaseConnector.swift */,
 				22FF3D081E67A45B00F2E70C /* Assets.xcassets */,
 				22FF3D0A1E67A45B00F2E70C /* Main.storyboard */,
-				221FC8481F9AFD8B00732D96 /* FirebaseConnector.swift */,
 				221FC84A1F9B001A00732D96 /* GoogleService-Info.plist */,
 			);
 			path = MessageProxy;
@@ -210,6 +210,7 @@
 				"${BUILT_PRODUCTS_DIR}/FirebaseCommunity/FirebaseCommunity.framework",
 				"${BUILT_PRODUCTS_DIR}/GCDWebServer/GCDWebServer.framework",
 				"${BUILT_PRODUCTS_DIR}/GRDB.swift/GRDB.framework",
+				"${BUILT_PRODUCTS_DIR}/GTMSessionFetcher/GTMSessionFetcher.framework",
 				"${BUILT_PRODUCTS_DIR}/GoogleToolboxForMac/GoogleToolboxForMac.framework",
 				"${PODS_ROOT}/Sparkle/Sparkle.framework",
 				"${PODS_ROOT}/Sparkle/Sparkle.framework.dSYM",
@@ -221,6 +222,7 @@
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/FirebaseCommunity.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/GCDWebServer.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/GRDB.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/GTMSessionFetcher.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/GoogleToolboxForMac.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework",
 				"${DWARF_DSYM_FOLDER_PATH}/Sparkle.framework.dSYM",

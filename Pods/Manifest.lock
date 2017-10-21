@@ -1,5 +1,9 @@
 PODS:
   - BlueSocket (0.12.74)
+  - FirebaseCommunity/Auth (0.1.4):
+    - FirebaseCommunity/Core
+    - GoogleToolboxForMac/NSDictionary+URLArguments (~> 2.1)
+    - GTMSessionFetcher/Core (~> 1.1)
   - FirebaseCommunity/Core (0.1.4):
     - FirebaseCommunity/Root
     - GoogleToolboxForMac/NSData+zlib (~> 2.1)
@@ -10,15 +14,24 @@ PODS:
   - GCDWebServer (3.3.3):
     - GCDWebServer/Core (= 3.3.3)
   - GCDWebServer/Core (3.3.3)
+  - GoogleToolboxForMac/DebugUtils (2.1.3):
+    - GoogleToolboxForMac/Defines (= 2.1.3)
   - GoogleToolboxForMac/Defines (2.1.3)
   - GoogleToolboxForMac/NSData+zlib (2.1.3):
     - GoogleToolboxForMac/Defines (= 2.1.3)
+  - GoogleToolboxForMac/NSDictionary+URLArguments (2.1.3):
+    - GoogleToolboxForMac/DebugUtils (= 2.1.3)
+    - GoogleToolboxForMac/Defines (= 2.1.3)
+    - GoogleToolboxForMac/NSString+URLArguments (= 2.1.3)
+  - GoogleToolboxForMac/NSString+URLArguments (2.1.3)
   - GRDB.swift (2.0.3)
+  - GTMSessionFetcher/Core (1.1.12)
   - leveldb-library (1.18.3)
   - Sparkle (1.18.1)
 
 DEPENDENCIES:
   - BlueSocket
+  - FirebaseCommunity/Auth
   - FirebaseCommunity/Database
   - GCDWebServer (~> 3.3.3)
   - GRDB.swift (~> 2.0.3)
@@ -30,9 +43,10 @@ SPEC CHECKSUMS:
   GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
   GoogleToolboxForMac: 2501e2ad72a52eb3dfe7bd9aee7dad11b858bd20
   GRDB.swift: a78f5ade97b498c128a1652b1fecde9150f505d1
+  GTMSessionFetcher: ebaa1f79a5366922c1735f1566901f50beba23b7
   leveldb-library: 10fb39c39e243db4af1828441162405bbcec1404
   Sparkle: 06ea33170007c5937ee54da481b4481af98fac79
 
-PODFILE CHECKSUM: d3a836005b5d9f0ff2984ed8b5c689efea327afd
+PODFILE CHECKSUM: c7a8846f643ada23c175fe88a645453dd09de94a
 
 COCOAPODS: 1.3.1
