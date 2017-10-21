@@ -95,7 +95,7 @@ public struct FTS4 : VirtualTableModule {
         case .synchronized(let contentTable):
             // https://www.sqlite.org/fts3.html#_external_content_fts4_tables_
             
-            let rowIDColumn = (try? db.primaryKey(contentTable))??.rowIDColumn ?? "rowid"
+            let rowIDColumn = try db.primaryKey(contentTable).rowIDColumn ?? Column.rowID.name
             let ftsTable = tableName.quotedDatabaseIdentifier
             let content = contentTable.quotedDatabaseIdentifier
             let indexedColumns = definition.columns.map { $0.name }
@@ -110,25 +110,20 @@ public struct FTS4 : VirtualTableModule {
             
             let oldRowID = "old.\(rowIDColumn.quotedDatabaseIdentifier)"
             
-            try db.execute(
-                "CREATE TRIGGER \("__\(contentTable)_bu".quotedDatabaseIdentifier) BEFORE UPDATE ON \(content) BEGIN " +
-                    "DELETE FROM \(ftsTable) WHERE docid=\(oldRowID); " +
-                "END")
-            
-            try db.execute(
-                "CREATE TRIGGER \("__\(contentTable)_bd".quotedDatabaseIdentifier) BEFORE DELETE ON \(content) BEGIN " +
-                    "DELETE FROM \(ftsTable) WHERE docid=\(oldRowID); " +
-                "END")
-            
-            try db.execute(
-                "CREATE TRIGGER \("__\(contentTable)_au".quotedDatabaseIdentifier) AFTER UPDATE ON \(content) BEGIN " +
-                    "INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES(\(newContentColumns)); " +
-                "END")
-            
-            try db.execute(
-                "CREATE TRIGGER \("__\(contentTable)_ai".quotedDatabaseIdentifier) AFTER INSERT ON \(content) BEGIN " +
-                    "INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES(\(newContentColumns)); " +
-                "END")
+            try db.execute("""
+                CREATE TRIGGER \("__\(contentTable)_bu".quotedDatabaseIdentifier) BEFORE UPDATE ON \(content) BEGIN
+                    DELETE FROM \(ftsTable) WHERE docid=\(oldRowID);
+                END;
+                CREATE TRIGGER \("__\(contentTable)_bd".quotedDatabaseIdentifier) BEFORE DELETE ON \(content) BEGIN
+                    DELETE FROM \(ftsTable) WHERE docid=\(oldRowID);
+                END;
+                CREATE TRIGGER \("__\(contentTable)_au".quotedDatabaseIdentifier) AFTER UPDATE ON \(content) BEGIN
+                    INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES(\(newContentColumns));
+                END;
+                CREATE TRIGGER \("__\(contentTable)_ai".quotedDatabaseIdentifier) AFTER INSERT ON \(content) BEGIN
+                    INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES(\(newContentColumns));
+                END;
+                """)
             
             // https://www.sqlite.org/fts3.html#*fts4rebuidcmd
             
@@ -247,7 +242,7 @@ public final class FTS4TableDefinition {
 ///
 /// You get instances of this class when you create an FTS4 table:
 ///
-///     try db.create(virtualTable: "persons", using: FTS4()) { t in
+///     try db.create(virtualTable: "documents", using: FTS4()) { t in
 ///         t.column("content")      // FTS4ColumnDefinition
 ///     }
 ///
@@ -263,10 +258,10 @@ public final class FTS4ColumnDefinition {
         self.isLanguageId = false
     }
     
-    #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+    #if GRDBCUSTOMSQLITE || GRDBCIPHER
     /// Excludes the column from the full-text index.
     ///
-    ///     try db.create(virtualTable: "persons", using: FTS4()) { t in
+    ///     try db.create(virtualTable: "documents", using: FTS4()) { t in
     ///         t.column("a")
     ///         t.column("b").notIndexed()
     ///     }
@@ -284,7 +279,7 @@ public final class FTS4ColumnDefinition {
     #else
     /// Excludes the column from the full-text index.
     ///
-    ///     try db.create(virtualTable: "persons", using: FTS4()) { t in
+    ///     try db.create(virtualTable: "documents", using: FTS4()) { t in
     ///         t.column("a")
     ///         t.column("b").notIndexed()
     ///     }
@@ -304,7 +299,7 @@ public final class FTS4ColumnDefinition {
     
     /// Uses the column as the Int32 language id hidden column.
     ///
-    ///     try db.create(virtualTable: "persons", using: FTS4()) { t in
+    ///     try db.create(virtualTable: "documents", using: FTS4()) { t in
     ///         t.column("a")
     ///         t.column("lid").asLanguageId()
     ///     }

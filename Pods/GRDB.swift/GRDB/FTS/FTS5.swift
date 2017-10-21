@@ -62,7 +62,7 @@
                 }
             case .synchronized(let contentTable):
                 arguments.append("content=\(contentTable.sqlExpression.sql)")
-                if let rowIDColumn = try db.primaryKey(contentTable)?.rowIDColumn {
+                if let rowIDColumn = try db.primaryKey(contentTable).rowIDColumn {
                     arguments.append("content_rowid=\(rowIDColumn.sqlExpression.sql)")
                 }
             }
@@ -93,7 +93,7 @@
             case .synchronized(let contentTable):
                 // https://sqlite.org/fts5.html#external_content_tables
                 
-                let rowIDColumn = (try? db.primaryKey(contentTable))??.rowIDColumn ?? "rowid"
+                let rowIDColumn = try db.primaryKey(contentTable).rowIDColumn ?? Column.rowID.name
                 let ftsTable = tableName.quotedDatabaseIdentifier
                 let content = contentTable.quotedDatabaseIdentifier
                 let indexedColumns = definition.columns.map { $0.name }
@@ -110,21 +110,18 @@
                     .map { "old.\($0.quotedDatabaseIdentifier)" }
                     .joined(separator: ", ")
                 
-                try db.execute(
-                    "CREATE TRIGGER \("__\(contentTable)_ai".quotedDatabaseIdentifier) AFTER INSERT ON \(content) BEGIN " +
-                        "INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES (\(newContentColumns)); " +
-                    "END")
-                
-                try db.execute(
-                    "CREATE TRIGGER \("__\(contentTable)_ad".quotedDatabaseIdentifier) AFTER DELETE ON \(content) BEGIN " +
-                        "INSERT INTO \(ftsTable)(\(ftsTable), \(ftsColumns)) VALUES('delete', \(oldContentColumns)); " +
-                    "END")
-                
-                try db.execute(
-                    "CREATE TRIGGER \("__\(contentTable)_au".quotedDatabaseIdentifier) AFTER UPDATE ON \(content) BEGIN " +
-                        "INSERT INTO \(ftsTable)(\(ftsTable), \(ftsColumns)) VALUES('delete', \(oldContentColumns)); " +
-                        "INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES (\(newContentColumns)); " +
-                    "END")
+                try db.execute("""
+                    CREATE TRIGGER \("__\(contentTable)_ai".quotedDatabaseIdentifier) AFTER INSERT ON \(content) BEGIN
+                        INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES (\(newContentColumns));
+                    END;
+                    CREATE TRIGGER \("__\(contentTable)_ad".quotedDatabaseIdentifier) AFTER DELETE ON \(content) BEGIN
+                        INSERT INTO \(ftsTable)(\(ftsTable), \(ftsColumns)) VALUES('delete', \(oldContentColumns));
+                    END;
+                    CREATE TRIGGER \("__\(contentTable)_au".quotedDatabaseIdentifier) AFTER UPDATE ON \(content) BEGIN
+                        INSERT INTO \(ftsTable)(\(ftsTable), \(ftsColumns)) VALUES('delete', \(oldContentColumns));
+                        INSERT INTO \(ftsTable)(\(ftsColumns)) VALUES (\(newContentColumns));
+                    END;
+                    """)
                 
                 // https://sqlite.org/fts5.html#the_rebuild_command
                 
@@ -132,17 +129,25 @@
             }
         }
         
-        static func api(_ db: Database) -> UnsafePointer<fts5_api>? {
-            do {
-                return try Data.fetchOne(db, "SELECT fts5()").flatMap { data in
-                    guard data.count == MemoryLayout<UnsafePointer<fts5_api>>.size else {
-                        return nil
-                    }
-                    return data.withUnsafeBytes { $0.pointee }
-                }
-            } catch {
-                return nil
+        static func api(_ db: Database) -> UnsafePointer<fts5_api> {
+            let sqliteConnection = db.sqliteConnection
+            var statement: SQLiteStatement? = nil
+            var api: UnsafePointer<fts5_api>? = nil
+            let type: StaticString = "fts5_api_ptr"
+            
+            let code = sqlite3_prepare_v3(db.sqliteConnection, "SELECT fts5(?)", -1, 0, &statement, nil)
+            guard code == SQLITE_OK else {
+                fatalError("FTS5 is not available")
             }
+            defer { sqlite3_finalize(statement) }
+            type.utf8Start.withMemoryRebound(to: Int8.self, capacity: type.utf8CodeUnitCount) { typePointer in
+                _ = sqlite3_bind_pointer(statement, 1, &api, typePointer, nil)
+            }
+            sqlite3_step(statement)
+            guard let result = api else {
+                fatalError("FTS5 is not available")
+            }
+            return result
         }
     }
     
@@ -279,7 +284,7 @@
     ///
     /// You get instances of this class when you create an FTS5 table:
     ///
-    ///     try db.create(virtualTable: "persons", using: FTS5()) { t in
+    ///     try db.create(virtualTable: "documents", using: FTS5()) { t in
     ///         t.column("content")      // FTS5ColumnDefinition
     ///     }
     ///
@@ -295,7 +300,7 @@
         
         /// Excludes the column from the full-text index.
         ///
-        ///     try db.create(virtualTable: "persons", using: FTS5()) { t in
+        ///     try db.create(virtualTable: "documents", using: FTS5()) { t in
         ///         t.column("a")
         ///         t.column("b").notIndexed()
         ///     }

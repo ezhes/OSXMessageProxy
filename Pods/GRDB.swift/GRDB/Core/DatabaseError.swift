@@ -1,7 +1,8 @@
 import Foundation
-
 #if SWIFT_PACKAGE
     import CSQLite
+#elseif !GRDBCUSTOMSQLITE && !GRDBCIPHER
+    import SQLite3
 #endif
 
 public struct ResultCode : RawRepresentable, Equatable, CustomStringConvertible {
@@ -25,7 +26,17 @@ public struct ResultCode : RawRepresentable, Equatable, CustomStringConvertible 
     }
     
     public var description: String {
-        return "\(rawValue) (\(String(cString: sqlite3_errstr(rawValue))))"
+        // sqlite3_errstr was added in SQLite 3.7.15 http://www.sqlite.org/changes.html#version_3_7_15
+        // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
+        #if GRDBCUSTOMSQLITE || GRDBCIPHER
+            return "\(rawValue) (\(String(cString: sqlite3_errstr(rawValue))))"
+        #else
+            if #available(iOS 8.2, OSX 10.10, OSXApplicationExtension 10.10, iOSApplicationExtension 8.2, *) {
+                return "\(rawValue) (\(String(cString: sqlite3_errstr(rawValue))))"
+            } else {
+                return "\(rawValue)"
+            }
+        #endif
     }
     
     public static func == (_ lhs: ResultCode, _ rhs: ResultCode) -> Bool {
@@ -212,7 +223,7 @@ public struct DatabaseError : Error {
 extension DatabaseError: CustomStringConvertible {
     /// A textual representation of `self`.
     public var description: String {
-        var description = "SQLite error \(extendedResultCode.rawValue)"
+        var description = "SQLite error \(resultCode.rawValue)"
         if let sql = sql {
             description += " with statement `\(sql)`"
         }

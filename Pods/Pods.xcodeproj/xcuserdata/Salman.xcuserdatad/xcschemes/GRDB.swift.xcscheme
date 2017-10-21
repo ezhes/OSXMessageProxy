@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "25AA7196E07E64D3D37D4910D2BE34B2"
+               BlueprintIdentifier = "1E919D6DC3E502DCFEF0FAC5ED562DAA"
                BuildableName = "GRDB.framework"
                BlueprintName = "GRDB.swift"
                ReferencedContainer = "container:Pods.xcodeproj">
@@ -26,6 +26,7 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      language = ""
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
       </Testables>
@@ -36,6 +37,7 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      language = ""
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
@@ -45,7 +47,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "25AA7196E07E64D3D37D4910D2BE34B2"
+            BlueprintIdentifier = "1E919D6DC3E502DCFEF0FAC5ED562DAA"
             BuildableName = "GRDB.framework"
             BlueprintName = "GRDB.swift"
             ReferencedContainer = "container:Pods.xcodeproj">

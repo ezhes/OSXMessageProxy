@@ -55,10 +55,7 @@
         ///     class MyTokenizer : FTS5CustomTokenizer { ... }
         ///     db.add(tokenizer: MyTokenizer.self)
         public func add<Tokenizer: FTS5CustomTokenizer>(tokenizer: Tokenizer.Type) {
-            guard let api = FTS5.api(self) else {
-                // Assume a GRDB bug or an SQLite miscompilation: there is no point throwing any error.
-                fatalError("FTS5 is not enabled")
-            }
+            let api = FTS5.api(self)
             
             // Swift won't let the @convention(c) xCreate() function below create
             // an instance of the generic Tokenizer type.

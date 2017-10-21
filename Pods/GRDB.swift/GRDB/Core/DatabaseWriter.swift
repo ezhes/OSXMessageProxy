@@ -26,7 +26,16 @@ public protocol DatabaseWriter : DatabaseReader {
     /// This method is *not* reentrant.
     func write<T>(_ block: (Database) throws -> T) rethrows -> T
     
-    
+    /// Synchronously executes a block that takes a database connection, and
+    /// returns its result.
+    ///
+    /// Eventual concurrent database updates are postponed until the block
+    /// has executed.
+    ///
+    /// This method is reentrant. It should be avoided because it fosters
+    /// dangerous concurrency practices.
+    func unsafeReentrantWrite<T>(_ block: (Database) throws -> T) rethrows -> T
+
     // MARK: - Reading from Database
     
     /// Synchronously or asynchronously executes a read-only block that takes a
@@ -44,12 +53,12 @@ public protocol DatabaseWriter : DatabaseReader {
     ///   state is the last committed state.
     ///
     ///         try writer.write { db in
-    ///             try db.execute("DELETE FROM persons")
+    ///             try db.execute("DELETE FROM players")
     ///             try writer.readFromCurrentState { db in
     ///                 // Guaranteed to be zero
-    ///                 try Int.fetchOne(db, "SELECT COUNT(*) FROM persons")!
+    ///                 try Int.fetchOne(db, "SELECT COUNT(*) FROM players")!
     ///             }
-    ///             try db.execute("INSERT INTO persons ...")
+    ///             try db.execute("INSERT INTO players ...")
     ///         }
     ///
     /// - When this method is called inside an uncommitted transation, the
@@ -62,12 +71,12 @@ public protocol DatabaseWriter : DatabaseReader {
     ///     the database in its last committed state.
     ///
     ///         try dbPool.write { db in
-    ///             try db.execute("DELETE FROM persons")
+    ///             try db.execute("DELETE FROM players")
     ///             db.inTransaction {
-    ///                 try db.execute("INSERT INTO persons ...")
+    ///                 try db.execute("INSERT INTO players ...")
     ///                 try dbPool.readFromCurrentState { db in
     ///                     // Zero
-    ///                     try Int.fetchOne(db, "SELECT COUNT(*) FROM persons")!
+    ///                     try Int.fetchOne(db, "SELECT COUNT(*) FROM players")!
     ///                 }
     ///                 return .commit
     ///             }
@@ -79,12 +88,12 @@ public protocol DatabaseWriter : DatabaseReader {
     ///     is run after the select.
     ///
     ///         try dbQueue.write { db in
-    ///             try db.execute("DELETE FROM persons")
+    ///             try db.execute("DELETE FROM players")
     ///             db.inTransaction {
-    ///                 try db.execute("INSERT INTO persons ...")
+    ///                 try db.execute("INSERT INTO players ...")
     ///                 try dbQueue.readFromCurrentState { db in
     ///                     // One
-    ///                     try Int.fetchOne(db, "SELECT COUNT(*) FROM persons")!
+    ///                     try Int.fetchOne(db, "SELECT COUNT(*) FROM players")!
     ///                 }
     ///                 return .commit
     ///             }
@@ -92,10 +101,6 @@ public protocol DatabaseWriter : DatabaseReader {
     ///
     /// This method is *not* reentrant.
     func readFromCurrentState(_ block: @escaping (Database) -> Void) throws
-    
-    /// Returns an optional database connection. If not nil, the caller is
-    /// executing on a serialized writer dispatch queue.
-    var availableDatabaseConnection: Database? { get }
 }
 
 extension DatabaseWriter {
@@ -105,16 +110,69 @@ extension DatabaseWriter {
     /// Add a transaction observer, so that it gets notified of
     /// database changes.
     ///
-    /// The transaction observer is weakly referenced: it is not retained, and
-    /// stops getting notifications after it is deallocated.
-    ///
     /// - parameter transactionObserver: A transaction observer.
-    public func add(transactionObserver: TransactionObserver) {
-        write { $0.add(transactionObserver: transactionObserver) }
+    /// - parameter extent: The duration of the observation. The default is
+    ///   the observer lifetime (observation lasts until observer
+    ///   is deallocated).
+    public func add(transactionObserver: TransactionObserver, extent: Database.TransactionObservationExtent = .observerLifetime) {
+        write { $0.add(transactionObserver: transactionObserver, extent: extent) }
     }
     
     /// Remove a transaction observer.
     public func remove(transactionObserver: TransactionObserver) {
         write { $0.remove(transactionObserver: transactionObserver) }
+    }
+}
+
+/// A type-erased DatabaseWriter
+///
+/// Instances of AnyDatabaseWriter forward their methods to an arbitrary
+/// underlying database writer.
+public final class AnyDatabaseWriter : DatabaseWriter {
+    private let base: DatabaseWriter
+    
+    /// Creates a database writer that wraps a base database writer.
+    public init(_ base: DatabaseWriter) {
+        self.base = base
+    }
+    
+    public func read<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.read(block)
+    }
+
+    public func unsafeRead<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.unsafeRead(block)
+    }
+
+    public func unsafeReentrantRead<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.unsafeReentrantRead(block)
+    }
+
+    public func add(function: DatabaseFunction) {
+        base.add(function: function)
+    }
+
+    public func remove(function: DatabaseFunction) {
+        base.remove(function: function)
+    }
+
+    public func add(collation: DatabaseCollation) {
+        base.add(collation: collation)
+    }
+
+    public func remove(collation: DatabaseCollation) {
+        base.remove(collation: collation)
+    }
+
+    public func write<T>(_ block: (Database) throws -> T) rethrows -> T {
+        return try base.write(block)
+    }
+
+    public func unsafeReentrantWrite<T>(_ block: (Database) throws -> T) rethrows -> T {
+        return try base.unsafeReentrantWrite(block)
+    }
+
+    public func readFromCurrentState(_ block: @escaping (Database) -> Void) throws {
+        try base.readFromCurrentState(block)
     }
 }

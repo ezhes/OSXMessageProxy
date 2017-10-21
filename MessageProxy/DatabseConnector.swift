@@ -40,7 +40,7 @@ class DatabaseConstructor: NSObject {
         //Do we have exactly the rows we wanted?
         if lastMessageROWIDRows?.count == 1 {
             //Grab the only row's ROWID and store it as our last reference
-            lastMessageDate = lastMessageROWIDRows![0].value(named: "date")
+            lastMessageDate = lastMessageROWIDRows![0]["date"]
             //Now we are ready to fire our timer
             _ = Timer.scheduledTimer(timeInterval: DATABASE_PROBE_INTERVAL, target: self, selector: #selector(self.checkForNewMessages), userInfo: nil, repeats: true);
         }else {
@@ -65,7 +65,7 @@ class DatabaseConstructor: NSObject {
             rows?.forEach({
                 handle in
                 //Set our handle id as the key and our id as the value
-                handleDictionary[handle.value(named: "ROWID")] = handle.value(named: "id")
+                handleDictionary[handle["ROWID"]] = handle["id"]
             })
             //We're done, return!
             return handleDictionary
@@ -123,11 +123,11 @@ class DatabaseConstructor: NSObject {
             let attachmentData = attachmentRow![0]
             //Build our container..
             let filledAttachment = Attachment()
-            filledAttachment.id = attachmentData.value(named: "ROWID")
-            filledAttachment.guid = attachmentData.value(named: "guid")
-            filledAttachment.pathToFile = attachmentData.value(named: "filename")
-            filledAttachment.mimeType = attachmentData.value(named: "mime_type")
-            filledAttachment.fileName = attachmentData.value(named: "transfer_name")
+            filledAttachment.id = attachmentData["ROWID"]
+            filledAttachment.guid = attachmentData["guid"]
+            filledAttachment.pathToFile = attachmentData["filename"]
+            filledAttachment.mimeType = attachmentData["mime_type"]
+            filledAttachment.fileName = attachmentData["transfer_name"]
             
             return filledAttachment
         } catch  {
@@ -165,28 +165,28 @@ class DatabaseConstructor: NSObject {
     /// - Returns: A properly stuffed Swift accessable version
     func convertMessageToDictionary(message:Row,handleTable:[Int:String]) -> NSMutableDictionary {
             let messageDictionaryRepresentation = NSMutableDictionary()
-            messageDictionaryRepresentation.setValue(message.value(named: "message_id"), forKey: "message_id")
-            messageDictionaryRepresentation.setValue(message.value(named: "guid"), forKey: "guid")
-            messageDictionaryRepresentation.setValue(message.value(named: "text"), forKey: "text")
-            let contactName = handleTable[message.value(named: "handle_id")]?.replacingOccurrences(of: "+1", with: "") //hackily fix intermittent country codes
+            messageDictionaryRepresentation.setValue(message["message_id"], forKey: "message_id")
+            messageDictionaryRepresentation.setValue(message[ "guid"], forKey: "guid")
+            messageDictionaryRepresentation.setValue(message[ "text"], forKey: "text")
+            let contactName = handleTable[message[ "handle_id" ]]?.replacingOccurrences(of: "+1", with: "") //hackily fix intermittent country codes
             if (contactName != nil) {
                 messageDictionaryRepresentation.setValue(contactsDatabase?[contactName!], forKey: "human_name")
                 messageDictionaryRepresentation.setValue(contactName, forKey: "sender") //lookup our handle into a useful contact lookup name
             }
-            messageDictionaryRepresentation.setValue(message.value(named: "error"), forKey: "error")
-            messageDictionaryRepresentation.setValue(message.value(named: "date"), forKey: "date")
-            messageDictionaryRepresentation.setValue(message.value(named: "date_read"), forKey: "date_read")
-            messageDictionaryRepresentation.setValue(message.value(named: "date_delivered"), forKey: "date_delivered")
-            messageDictionaryRepresentation.setValue(message.value(named: "is_from_me"), forKey: "is_from_me")
-            messageDictionaryRepresentation.setValue(message.value(named: "chat_id"), forKey: "chat_id")
-            messageDictionaryRepresentation.setValue(message.value(named: "is_sent"), forKey: "is_sent")
+            messageDictionaryRepresentation.setValue(message[ "error"], forKey: "error")
+            messageDictionaryRepresentation.setValue(message[ "date"], forKey: "date")
+            messageDictionaryRepresentation.setValue(message[ "date_read"], forKey: "date_read")
+            messageDictionaryRepresentation.setValue(message[ "date_delivered"], forKey: "date_delivered")
+            messageDictionaryRepresentation.setValue(message[ "is_from_me"], forKey: "is_from_me")
+            messageDictionaryRepresentation.setValue(message[ "chat_id"], forKey: "chat_id")
+            messageDictionaryRepresentation.setValue(message[ "is_sent"], forKey: "is_sent")
             //Setup attachemnts
-            let attachmentID = message.value(named: "attachment_id")
+            let attachmentID = message[ "attachment_id" ]
             if (attachmentID != nil) {
                 //We have an attachment!
                 messageDictionaryRepresentation.setValue(true, forKey: "has_attachments")
                 messageDictionaryRepresentation.setValue(attachmentID, forKey: "attachment_id")
-                messageDictionaryRepresentation.setValue(message.value(named: "uti"), forKey: "uti")
+                messageDictionaryRepresentation.setValue(message[ "uti"], forKey: "uti")
             }else {
                 messageDictionaryRepresentation.setValue(false, forKey: "has_attachments")
             }
@@ -277,7 +277,7 @@ class DatabaseConstructor: NSObject {
         let conversationRows = getDatabaseConversations()
         conversationRows?.forEach({
             conversation in
-            let key = "\(conversation.value(named: "chat_id") as! Int64)"
+            let key = "\(conversation[ "chat_id"] as! Int64)"
             
             //Do we have an old stored conversation?
             let oldConversation = conversationBundle.object(forKey: key) as? NSMutableDictionary
@@ -285,34 +285,34 @@ class DatabaseConstructor: NSObject {
                 //Yes, let's add the new participant
                 let oldParticipants = oldConversation!.value(forKey: "IDs") as! String
                 //Update our exsisting conversation's parts
-                oldConversation!.setValue(oldParticipants + ", " + (conversation.value(named: "id") as! String).replacingOccurrences(of: "+1", with: ""), forKey: "IDs")
+                oldConversation!.setValue(oldParticipants + ", " + (conversation[ "id"] as! String).replacingOccurrences(of: "+1", with: ""), forKey: "IDs")
                 //Check if we have a display name built by us
                 if (oldConversation!.value(forKey: "has_manual_display_name") as? Bool == true) {
                     //Add the new person to the custom displayname
-                    oldConversation!.setValue(oldConversation!.value(forKey: "display_name") as! String + ", " + getHumanName(handle_id: conversation.value(named: "handle_id")), forKey: "display_name")
+                    oldConversation!.setValue(oldConversation!.value(forKey: "display_name") as! String + ", " + getHumanName(handle_id: conversation[ "handle_id"]), forKey: "display_name")
                 }
                 //Update
                 conversationBundle.setValue(oldConversation!, forKey: "\(key)")
             }else {
                 //Don't have one yet!
                 let conversationDictionaryRepresentation = NSMutableDictionary()
-                conversationDictionaryRepresentation.setValue(conversation.value(named: "chat_id"), forKey: "chat_id")
-                conversationDictionaryRepresentation.setValue(conversation.value(named: "handle_id"), forKey: "handle_id")
-                conversationDictionaryRepresentation.setValue(conversation.value(named: "id"), forKey: "IDs")
-                conversationDictionaryRepresentation.setValue(conversation.value(named: "service"), forKey: "service")
-                let displayName = conversation.value(named: "display_name")
+                conversationDictionaryRepresentation.setValue(conversation[ "chat_id"], forKey: "chat_id")
+                conversationDictionaryRepresentation.setValue(conversation[ "handle_id"], forKey: "handle_id")
+                conversationDictionaryRepresentation.setValue(conversation[ "id"], forKey: "IDs")
+                conversationDictionaryRepresentation.setValue(conversation[ "service"], forKey: "service")
+                let displayName = conversation[ "display_name"]
                 //Check if we have a display name to set
                 if (displayName as? String != "") {
-                    conversationDictionaryRepresentation.setValue(conversation.value(named: "display_name"), forKey: "display_name")
+                    conversationDictionaryRepresentation.setValue(conversation[ "display_name"], forKey: "display_name")
                     conversationDictionaryRepresentation.setValue(false, forKey: "has_manual_display_name") //The display name is a real named iMessage group and so it must be used as the send to in the client
                 }else {
                     //No, we don't so let's build the human one
-                    conversationDictionaryRepresentation.setValue(getHumanName(handle_id: conversation.value(named: "handle_id")), forKey: "display_name")
+                    conversationDictionaryRepresentation.setValue(getHumanName(handle_id: conversation[ "handle_id"]), forKey: "display_name")
                     conversationDictionaryRepresentation.setValue(true, forKey: "has_manual_display_name")
                 }
                 
                 //Add our last message. This gives us a blurb, last date, etc
-                if let mostRecentBlurbMessage = getMessages(forChatID: conversation.value(named: "chat_id"), messageLimit: 1).firstObject {
+                if let mostRecentBlurbMessage = getMessages(forChatID: conversation[ "chat_id"], messageLimit: 1).firstObject {
                     conversationDictionaryRepresentation.setValue(mostRecentBlurbMessage, forKey: "lastMessage")
                     //Only add if we've added our last message sucessfully
                     conversationBundle.setValue(conversationDictionaryRepresentation, forKey: "\(key)")
@@ -409,7 +409,7 @@ class DatabaseConstructor: NSObject {
                         rows.forEach({
                             message in
                             //Check if we're in our sent messages
-                            if (message.value(named: "text") == self.messageQueue[0].messageContents!) {
+                            if (message[ "text"] == self.messageQueue[0].messageContents!) {
                                 //Yes, flag as done
                                 messageHasBeenSent = true
                                 messageRowIfSent = message
@@ -516,19 +516,19 @@ class DatabaseConstructor: NSObject {
                 messageNewMessageRows?.forEach({
                     newMessage in
                     //Mark all as sent pre-emptively incase we throw
-                    lastMessageDate = newMessage.value(named: "date")
+                    lastMessageDate = newMessage[ "date"]
                     //Store our message handle id because we use it often
-                    let handleID = newMessage.value(named: "handle_id") as? Int64
+                    let handleID = newMessage[ "handle_id"] as? Int64
                     let swiftyMessage = convertMessageToDictionary(message: newMessage, handleTable: handleTable)
                     
                     //Make sure we didn't send our message. Notifying about a SENT message is stupid
-                    if (newMessage.value(named: "is_from_me") == 0) {
+                    if (newMessage[ "is_from_me"] == 0) {
                         print("Sending...")
                         socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"newMessage\", \"content\" :\(convertMessageArrayToJSON(array: [swiftyMessage]))}")
                         let senderName = getHumanName(handle_id: Int(handleID!))
                         //Build our notification sender
                         let appURL = handleTable[Int(handleID!)]?.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed) ?? "Name Failure"
-                        let message = newMessage.value(named: "text") as? String ?? "Unsupported message content"
+                        let message = newMessage[ "text"] as? String ?? "Unsupported message content"
                         self.sendNotification(title: senderName, contents: message, appURL: appURL)
                         
                     }

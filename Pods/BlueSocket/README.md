@@ -3,6 +3,7 @@
 ![Linux](https://img.shields.io/badge/os-linux-green.svg?style=flat)
 ![Apache 2](https://img.shields.io/badge/license-Apache2-blue.svg?style=flat)
 ![](https://img.shields.io/badge/Swift-3.0-orange.svg?style=flat)
+![](https://img.shields.io/badge/Swift-4.0-orange.svg?style=flat)
 [![Build Status - Master](https://travis-ci.org/IBM-Swift/BlueSocket.svg?branch=master)](https://travis-ci.org/IBM-Swift/BlueSocket)
 
 # BlueSocket
@@ -17,22 +18,32 @@ Socket framework for Swift using the Swift Package Manager. Works on iOS, macOS,
 ## Prerequisites
 
 ### Swift
+
 * Swift Open Source `swift-3.0.1-RELEASE` toolchain (**Minimum REQUIRED for latest release**)
-* Swift Open Source `swift-3.0.2-RELEASE` toolchain (**Recommended**)
+* Swift Open Source `swift-4.0.0-RELEASE` toolchain (**Recommended**)
+* Swift toolchain included in *Xcode Version 9.0 (9A325) or higher*.
 
 ### macOS
 
 * macOS 10.11.6 (*El Capitan*) or higher
-* Xcode Version 8.2 (8C38) or higher using one of the above toolchains (*Recommended*)
+* Xcode Version 8.3.2 (8E2002) or higher using one of the above toolchains (*Recommended*)
+* Xcode Version 9.0  (9A325) or higher using the included toolchain.
 
 ### iOS
+
 * iOS 10.0 or higher
-* Xcode Version 8.2 (8C38) or higher using one of the above toolchains (*Recommended*)
+* Xcode Version 8.3.2 (8E2002) or higher using one of the above toolchains (*Recommended*)
+* Xcode Version 9.0  (9A325) or higher using the included toolchain.
 
 ### Linux
 
 * Ubuntu 16.04 (or 16.10 but only tested on 16.04)
-* One of the Swift Open Source toolchains listed above
+* One of the Swift Open Source toolchain listed above
+
+### Other Platforms
+
+* **BlueSocket** is **NOT** supported on *watchOS* since POSIX/BSD/Darwin sockets are not supported on the actual device although they are supported in the simulator.
+* **BlueSocket** should work on *tvOS* but has **NOT** been tested.
 
 ### Add-ins
 
@@ -48,12 +59,6 @@ To build Socket from the command line:
 ```
 
 ## Testing
-
-**Important Note:**
-```
-Testing on both macOS and Linux requires a working Dispatch in the toolchain.
-```
-**THIS ONLY APPLIES TO TESTING**.
 
 To run the supplied unit tests for **Socket** from the command line:
 
@@ -73,7 +78,7 @@ To run the supplied unit tests for **Socket** from the command line:
 To include BlueSocket into a Swift Package Manager package, add it to the `dependencies` attribute defined in your `Package.swift` file. You can select the version using the `majorVersion` and `minor` parameters. For example:
 ```
 	dependencies: [
-		.Package(url: "https://github.com/IBM-Swift/BlueSocket", majorVersion: <majorVersion>, minor: <minor>)
+		.Package(url: "https://github.com/IBM-Swift/BlueSocket.git", majorVersion: <majorVersion>, minor: <minor>)
 	]
 ```
 
@@ -81,6 +86,17 @@ To include BlueSocket into a Swift Package Manager package, add it to the `depen
 To include BlueSocket in a project using Carthage, add a line to your `Cartfile` with the GitHub organization and project names and version. For example:
 ```
 	github "IBM-Swift/BlueSocket" ~> <majorVersion>.<minor>
+```
+
+#### CocoaPods
+To include BlueSocket in a project using CocoaPods, you just add `BlueSocket` to your `Podfile`, for example:
+```
+    platform :ios, '10.0'
+
+    target 'MyApp' do
+        use_frameworks!
+        pod 'BlueSocket'
+    end
 ```
 
 ### Before starting
@@ -130,8 +146,8 @@ To close the socket of an open instance, the following function is provided:
 ### Listen on a socket (TCP/UNIX).
 
 To use **BlueSocket** to listen for an connection on a socket the following API is provided:
-- `listen(on port: Int, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG)`
-The first parameter `port`, is the port to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.
+- `listen(on port: Int, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG, allowPortReuse: Bool = true)`
+The first parameter `port`, is the port to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.  To allow the reuse of the listening port, set `allowPortReuse` to `true`.  If set to `false`, a error will occur if you attempt to listen on a port already in use.  The `DEFAULT` behavior is to `allow` port reuse.
 - `listen(on path: String, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG)`
 This API can only be used with the `.unix` protocol family. The first parameter `path`, is the path to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.
 
@@ -146,13 +162,14 @@ try socket.listen(on: 1337)
 ### Accepting a connection from a listening socket (TCP/UNIX).
 
 When a listening socket detects an incoming connection request, control is returned to your program.  You can then either accept the connection or continue listening or both if your application is multi-threaded. **BlueSocket** supports two distinct ways of accepting an incoming connection. They are:
-- `acceptClientConnection()` - This function accepts the connection and returns a *new* `Socket` instance based on the newly connected socket. The instance that was listening in unaffected.
+- `acceptClientConnection(invokeDelegate: Bool = true)` - This function accepts the connection and returns a *new* `Socket` instance based on the newly connected socket. The instance that was listening in unaffected.  If `invokeDelegate` is `false` and the `Socket` has an `SSLService` delegate attached, you **MUST** call the `invokeDelegateOnAccept` method using the `Socket` instance that is returned by this function.
+- `invokeDelegateOnAccept(for newSocket: Socket)` - If the `Socket` instance has a `SSLService` delegate, this will invoke the delegates accept function to perform SSL negotiation.  It should be called with the `Socket` instance returned by `acceptClientConnection`.  This function will throw an exception if called with the wrong `Socket` instance, called multiple times, or if the `Socket` instance does **NOT** have a `SSLService` delegate.
 - `acceptConnection()` - This function accepts the incoming connection, *replacing and closing* the existing listening socket. The properties that were formerly associated with the listening socket are replaced by the properties that are relevant to the newly connected socket.
 
 ### Connecting a socket to a server (TCP/UNIX).
 
 In addition to the `create(connectedUsing:)` factory method described above, **BlueSocket** supports three additional instance functions for connecting a `Socket` instance to a server. They are:
-- `connect(to host: String, port: Int32)` - This API allows you to connect to a server based on the `hostname` and `port` you provide.
+- `connect(to host: String, port: Int32, timeout: UInt = 0)` - This API allows you to connect to a server based on the `hostname` and `port` you provide. Note: an `exception` will be thrown by this function if the value of `port` is not in the range `1-65535`.  Optionally, you can set `timeout` to the number of milliseconds to wait for the connect. Note: If the socket is in blocking mode it will be changed to non-blocking mode *temporarily* if a `timeout` greater than zero (0) is provided. The returned socket will be *set back to its original setting (blocking or non-blocking)*.
 - `connect(to path: String)` - This API can only be used with the `.unix` protocol family. It allows you to connect to a server based on the `path` you provide.
 - `connect(using signature: Signature)` - This API allows you specify the connection information by providing a `Socket.Signature` instance containing the information.  Refer to `Socket.Signature` in *Socket.swift* for more information.
 
@@ -208,25 +225,15 @@ The read and write APIs above that use either `NSData` or `NSMutableData` will *
 - `checkStatus(for sockets: [Socket])` - This *class function* allows you to check status of an array of `Socket` instances. Upon completion, a tuple containing two `Socket` arrays is returned. The first array contains the `Socket` instances are that have data available to be read and the second array contains `Socket` instances that can be written to. This API does *not* block. It will check the status of each `Socket` instance and then return the results.
 - `wait(for sockets: [Socket], timeout: UInt, waitForever: Bool = false)` - This *class function* allows for monitoring an array of `Socket` instances, waiting for either a timeout to occur or data to be readable at one of the monitored `Socket` instances. If a timeout of zero (0) is specified, this API will check each socket and return immediately. Otherwise, it will wait until either the timeout expires or data is readable from one or more of the monitored `Socket` instances. If a timeout occurs, this API will return `nil`.  If data is available on one or more of the monitored `Socket` instances, those instances will be returned in an array. If the `waitForever` flag is set to true, the function will wait indefinitely for data to become available *regardless of the timeout value specified*.
 - `createAddress(host: String, port: Int32)` - This *class* function allows for the creation of `Address` enum given a `host` and `port`. On success, this function returns an `Address` or `nil` if the `host` specified doesn't exist.
-- `isReadableOrWritable(waitForever: Bool = false, timeout: UInt = 0)` - This *instance function* allows to determine whether a `Socket` instance is readable and/or writable.  A tuple is returned containing two `Bool` values.  The first, if true, indicates the `Socket` instance has data to read, the second, if true, indicates that the `Socket` instance can be written to. `waitForever` if true, causes this routine to wait until the s`Socket` is either readable or writable or an error occurs.  If false, the `timeout` parameter specifies how long to wait.  If a value of zero `(0)` is specified for the timeout value, this function will check the *current* status and *immediately* return. This function returns a tuple containing two booleans, the first `readable` and the second, `writable`.  They are set to true if the `Socket` is either readable or writable repsectively.  If neither is set to true, a timeout has occurred.
+- `isReadableOrWritable(waitForever: Bool = false, timeout: UInt = 0)` - This *instance function* allows to determine whether a `Socket` instance is readable and/or writable.  A tuple is returned containing two `Bool` values.  The first, if true, indicates the `Socket` instance has data to read, the second, if true, indicates that the `Socket` instance can be written to. `waitForever` if true, causes this routine to wait until the `Socket` is either readable or writable or an error occurs.  If false, the `timeout` parameter specifies how long to wait.  If a value of zero `(0)` is specified for the timeout value, this function will check the *current* status and *immediately* return. This function returns a tuple containing two booleans, the first `readable` and the second, `writable`.  They are set to true if the `Socket` is either readable or writable repsectively.  If neither is set to true, a timeout has occurred.
 - `setBlocking(shouldBlock: Bool)` - This *instance function* allows you control whether or not this `Socket` instance should be placed in blocking mode or not. **Note:** All `Socket` instances are, by *default*, created in *blocking mode*.
 - `setReadTimeout(value: UInt = 0)` - This *instance function* allows you to set a timeout for read operations. `value` is a `UInt` the specifies the time for the read operation to wait before returning.  In the event of a timeout, the read operation will return `0` bytes read and `errno` will be set to `EAGAIN`.
 - `setWriteTimeout(value: UInt = 0)` - This *instance function* allows you to set a timeout for write operations. `value` is a `UInt` the specifies the time for the write operation to wait before returning.  In the event of a timeout, the write operation will return `0` bytes written and `errno` will be set to `EAGAIN` for *TCP* and *UNIX* sockets, for *UDP*, the write operation will *succeed* regardless of the timeout value.
+- `udpBroadcast(enable: Bool)` - This *instance function* is used to enable broadcast mode on a UDP socket.  Pass `true` to enable broadcast, `false` to disable.  This function will throw an exception if the `Socket` instance is not a UDP socket.
 
 ### Complete Example
 
-The following example shows how to create a relatively simple multi-threaded echo server using the new `GCD based` **Dispatch** API.  The Dispatch API was incorporated into the toolchain using the following sequence of commands where `<Path to>` is the path where you've installed the required toolchain. In this example, the `swift-DEVELOPMENT-SNAPSHOT-2016-08-18-a-ubuntu15.10` toolchain is being used. **Important note: clang-3.8 or clang-3.9 (recommended) is REQUIRED to successfully build libdispatch.**  *This is only required if using the 8/18 toolchain, Dispatch is built-in to the subsequently released toolchains.*
-```
-$ git clone --recursive git@github.com:apple/swift-corelibs-libdispatch.git
-$ cd swift-corelibs-libdispatch
-$ export CC=/usr/bin/clang-3.9
-$ export CXX=/usr/bin/clang-3.9
-$ sh ./autogen.sh
-$ ./configure --with-swift-toolchain=<Path to>/swift-DEVELOPMENT-SNAPSHOT-2016-08-18-a-ubuntu15.10/usr --prefix=<Path to>/swift-DEVELOPMENT-SNAPSHOT-2016-08-18-a-ubuntu15.10/usr
-$ make
-$ make install
-```
-What follows is the code for a simple echo server that once running, can be accessed via `telnet 127.0.0.1 1337`.
+The following example shows how to create a relatively simple multi-threaded echo server using the new `GCD based` **Dispatch** API. What follows is code for a simple echo server that once running, can be accessed via `telnet 127.0.0.1 1337`.
 ```swift
 
 import Foundation

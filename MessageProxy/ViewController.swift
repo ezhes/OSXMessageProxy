@@ -24,35 +24,36 @@ class ViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
+		if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+			versionText.stringValue = "v\(version)"
+		}
+		let defaults = UserDefaults.standard
+		//Check if we've configured already
+		if let apiProtectionKey = defaults.string(forKey: "protection_token") {
+			APIProtectionKeyTextField.stringValue = apiProtectionKey
+			passwordToken = apiProtectionKey
+			//Optional to have the key so check null
+			IFTTTMakeKey = defaults.string(forKey: "ifttt_maker_key") ?? "NO_MAKER_KEY_PROVIDED"
+			makerAPIKeyTextField.stringValue = IFTTTMakeKey
+			//We've loaded the needed data, let's go
+			setupWebserver()
+		}else {
+			//They didn't configure correctly
+			let alert = NSAlert.init()
+			alert.messageText = "First run configuration"
+			alert.informativeText = "MessageProxy can't find a saved API protection token and so it is neccesary that the application be configured.\n\nEnter some long random text for your API protection token. Don't use special charachters just A-z0-9. Really doesn't matter, just needs to be unique since this is not encryption but instead a cleartext password. DO NOT SHARE THIS TOKEN ONLINE ANYWHERE NEAR YOU API URL!!\n\nWhile optional, the IFTTT Maker token is really important because it's used to send notifications however you have configured previously according to README.md's instructions. GO HERE AND GET A TOKEN https://ifttt.com/maker_webhooks (you are to copy just the random text part of the given url once setup!!)\n\n\nEnter the required information, hit 'Write settings' and then quit and relaunch the application"
+			alert.addButton(withTitle: "Continue")
+			alert.runModal()
+			
+			
+		}
     }
-    
+	
     override func viewDidAppear() {
         super.viewDidAppear()
-        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            versionText.stringValue = "v\(version)"
-        }
-        let defaults = UserDefaults.standard
-        //Check if we've configured already
-        if let apiProtectionKey = defaults.string(forKey: "protection_token") {
-            APIProtectionKeyTextField.stringValue = apiProtectionKey
-            passwordToken = apiProtectionKey
-            //Optional to have the key so check null
-            IFTTTMakeKey = defaults.string(forKey: "ifttt_maker_key") ?? "NO_MAKER_KEY_PROVIDED"
-            makerAPIKeyTextField.stringValue = IFTTTMakeKey
-            //We've loaded the needed data, let's go
-            setupWebserver()
-        }else {
-            //They didn't configure correctly
-            let alert = NSAlert.init()
-            alert.messageText = "First run configuration"
-            alert.informativeText = "MessageProxy can't find a saved API protection token and so it is neccesary that the application be configured.\n\nEnter some long random text for your API protection token. Don't use special charachters just A-z0-9. Really doesn't matter, just needs to be unique since this is not encryption but instead a cleartext password. DO NOT SHARE THIS TOKEN ONLINE ANYWHERE NEAR YOU API URL!!\n\nWhile optional, the IFTTT Maker token is really important because it's used to send notifications however you have configured previously according to README.md's instructions. GO HERE AND GET A TOKEN https://ifttt.com/maker_webhooks (you are to copy just the random text part of the given url once setup!!)\n\n\nEnter the required information, hit 'Write settings' and then quit and relaunch the application"
-            alert.addButton(withTitle: "Continue")
-            alert.runModal()
-            
-            
-        }
+		
     }
-    
+	
     @IBAction func saveConfiguration(_ sender: Any) {
         let defaults = UserDefaults.standard
         let newAPIKey = APIProtectionKeyTextField.stringValue

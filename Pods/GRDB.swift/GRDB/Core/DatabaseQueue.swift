@@ -70,8 +70,8 @@ public final class DatabaseQueue {
     /// Synchronously executes a block in a protected dispatch queue, and
     /// returns its result.
     ///
-    ///     let persons = try dbQueue.inDatabase { db in
-    ///         try Person.fetchAll(...)
+    ///     let players = try dbQueue.inDatabase { db in
+    ///         try Player.fetchAll(...)
     ///     }
     ///
     /// This method is *not* reentrant.
@@ -189,7 +189,7 @@ public final class DatabaseQueue {
     // > behavior is undefined.
     //
     // This is why we use a serialized database:
-    fileprivate var serializedDatabase: SerializedDatabase
+    private var serializedDatabase: SerializedDatabase
 }
 
 
@@ -217,8 +217,8 @@ extension DatabaseQueue : DatabaseReader {
     /// Synchronously executes a read-only block in a protected dispatch queue,
     /// and returns its result.
     ///
-    ///     let persons = try dbQueue.read { db in
-    ///         try Person.fetchAll(...)
+    ///     let players = try dbQueue.read { db in
+    ///         try Player.fetchAll(...)
     ///     }
     ///
     /// This method is *not* reentrant.
@@ -232,7 +232,7 @@ extension DatabaseQueue : DatabaseReader {
     public func read<T>(_ block: (Database) throws -> T) rethrows -> T {
         // query_only pragma was added in SQLite 3.8.0 http://www.sqlite.org/changes.html#version_3_8_0
         // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
-        #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+        #if GRDBCUSTOMSQLITE || GRDBCIPHER
             return try inDatabase { try readOnly($0, block) }
         #else
             if #available(iOS 8.2, OSX 10.10, *) {
@@ -248,14 +248,26 @@ extension DatabaseQueue : DatabaseReader {
         return try inDatabase(block)
     }
     
+    /// Synchronously executes a block in a protected dispatch queue, and
+    /// returns its result.
+    ///
+    ///     try dbQueue.unsafeReentrantRead { db in
+    ///         try db.execute(...)
+    ///     }
+    ///
+    /// This method is reentrant. It should be avoided because it fosters
+    /// dangerous concurrency practices.
+    public func unsafeReentrantRead<T>(_ block: (Database) throws -> T) throws -> T {
+        return try serializedDatabase.reentrantSync(block)
+    }
+    
     
     // MARK: - Functions
     
     /// Add or redefine an SQL function.
     ///
-    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { databaseValues in
-    ///         let dbv = databaseValues.first!
-    ///         guard let int = dbv.value() as Int? else {
+    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { dbValues in
+    ///         guard let int = Int.fromDatabaseValue(dbValues[0]) else {
     ///             return nil
     ///         }
     ///         return int + 1
@@ -319,7 +331,7 @@ extension DatabaseQueue : DatabaseWriter {
     public func readFromCurrentState(_ block: @escaping (Database) -> Void) {
         // query_only pragma was added in SQLite 3.8.0 http://www.sqlite.org/changes.html#version_3_8_0
         // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
-        #if USING_CUSTOMSQLITE || USING_SQLCIPHER
+        #if GRDBCUSTOMSQLITE || GRDBCIPHER
             serializedDatabase.execute { readOnly($0, block) }
         #else
             if #available(iOS 8.2, OSX 10.10, *) {
@@ -330,10 +342,17 @@ extension DatabaseQueue : DatabaseWriter {
         #endif
     }
     
-    /// Returns an optional database connection. If not nil, the caller is
-    /// executing on the protected database dispatch queue.
-    public var availableDatabaseConnection: Database? {
-        return serializedDatabase.availableDatabaseConnection
+    /// Synchronously executes a block in a protected dispatch queue, and
+    /// returns its result.
+    ///
+    ///     try dbQueue.unsafeReentrantWrite { db in
+    ///         try db.execute(...)
+    ///     }
+    ///
+    /// This method is reentrant. It should be avoided because it fosters
+    /// dangerous concurrency practices.
+    public func unsafeReentrantWrite<T>(_ block: (Database) throws -> T) rethrows -> T {
+        return try serializedDatabase.reentrantSync(block)
     }
 }
 
