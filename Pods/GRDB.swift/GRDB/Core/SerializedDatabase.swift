@@ -52,8 +52,8 @@ final class SerializedDatabase {
         }
     }
     
-    /// Synchronously executes a block the serialized dispatch queue, and returns
-    /// its result.
+    /// Synchronously executes a block the serialized dispatch queue, and
+    /// returns its result.
     ///
     /// This method is *not* reentrant.
     func sync<T>(_ block: (Database) throws -> T) rethrows -> T {
@@ -96,7 +96,11 @@ final class SerializedDatabase {
         }
     }
     
-    private func reentrantSync<T>(_ block: (Database) throws -> T) rethrows -> T {
+    /// Synchronously executes a block the serialized dispatch queue, and
+    /// returns its result.
+    ///
+    /// This method is reentrant.
+    func reentrantSync<T>(_ block: (Database) throws -> T) rethrows -> T {
         // Three different cases:
         //
         // 1. A database is invoked from some queue like the main queue:
@@ -145,14 +149,10 @@ final class SerializedDatabase {
         }
     }
     
-    /// Returns an optional database connection. If not nil, the caller is
-    /// executing on the serialized dispatch queue.
-    var availableDatabaseConnection: Database? {
-        guard let watchdog = SchedulingWatchdog.current else { return nil }
-        guard watchdog.allows(db) else { return nil }
-        return db
+    /// Returns true if any only if the current dispatch queue is valid.
+    var onValidQueue: Bool {
+        return SchedulingWatchdog.allows(db)
     }
-
     
     /// Executes the block in the current queue.
     ///

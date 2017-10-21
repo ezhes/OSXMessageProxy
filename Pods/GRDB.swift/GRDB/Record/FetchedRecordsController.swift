@@ -1,4 +1,5 @@
 import Foundation
+
 #if os(iOS)
     import UIKit
 #endif
@@ -36,8 +37,19 @@ public final class FetchedRecordsController<Record: RowConvertible> {
     ///
     ///         This function should return true if the two records have the
     ///         same identity. For example, they have the same id.
-    public convenience init(_ databaseWriter: DatabaseWriter, sql: String, arguments: StatementArguments? = nil, adapter: RowAdapter? = nil, queue: DispatchQueue = .main, isSameRecord: ((Record, Record) -> Bool)? = nil) throws {
-        try self.init(databaseWriter, request: SQLRequest(sql, arguments: arguments, adapter: adapter).bound(to: Record.self), queue: queue, isSameRecord: isSameRecord)
+    public convenience init(
+        _ databaseWriter: DatabaseWriter,
+        sql: String,
+        arguments: StatementArguments? = nil,
+        adapter: RowAdapter? = nil,
+        queue: DispatchQueue = .main,
+        isSameRecord: ((Record, Record) -> Bool)? = nil) throws
+    {
+        try self.init(
+            databaseWriter,
+            request: SQLRequest(sql, arguments: arguments, adapter: adapter).asRequest(of: Record.self),
+            queue: queue,
+            isSameRecord: isSameRecord)
     }
     
     /// Creates a fetched records controller initialized from a fetch request
@@ -62,18 +74,40 @@ public final class FetchedRecordsController<Record: RowConvertible> {
     ///
     ///         This function should return true if the two records have the
     ///         same identity. For example, they have the same id.
-    public convenience init<Request>(_ databaseWriter: DatabaseWriter, request: Request, queue: DispatchQueue = .main, isSameRecord: ((Record, Record) -> Bool)? = nil) throws where Request: TypedRequest, Request.Fetched == Record {
+    public convenience init<Request>(
+        _ databaseWriter: DatabaseWriter,
+        request: Request,
+        queue: DispatchQueue = .main,
+        isSameRecord: ((Record, Record) -> Bool)? = nil) throws
+        where Request: TypedRequest, Request.RowDecoder == Record
+    {
+        let itemsAreIdenticalFactory: ItemComparatorFactory<Record>
         if let isSameRecord = isSameRecord {
-            try self.init(databaseWriter, request: request, queue: queue, itemsAreIdentical: { isSameRecord($0.record, $1.record) })
+            itemsAreIdenticalFactory = { _ in { isSameRecord($0.record, $1.record) } }
         } else {
-            try self.init(databaseWriter, request: request, queue: queue, itemsAreIdentical: { _ in false })
+            itemsAreIdenticalFactory = { _ in { _,_ in false } }
         }
+        
+        try self.init(
+            databaseWriter,
+            request: request,
+            queue: queue,
+            itemsAreIdenticalFactory: itemsAreIdenticalFactory)
     }
     
-    fileprivate init<Request>(_ databaseWriter: DatabaseWriter, request: Request, queue: DispatchQueue, itemsAreIdentical: @escaping ItemComparator<Record>) throws where Request: TypedRequest, Request.Fetched == Record {
-        self.request = try databaseWriter.unsafeRead { db in try ObservedRequest(db, request: request) }
+    private init<Request>(
+        _ databaseWriter: DatabaseWriter,
+        request: Request,
+        queue: DispatchQueue,
+        itemsAreIdenticalFactory: @escaping ItemComparatorFactory<Record>) throws
+        where Request: TypedRequest, Request.RowDecoder == Record
+    {
+        self.itemsAreIdenticalFactory = itemsAreIdenticalFactory
+        self.request = request
+        (self.selectionInfo, self.itemsAreIdentical) = try databaseWriter.unsafeRead { db in
+            try FetchedRecordsController.fetchSelectionInfoAndComparator(db, request: request, itemsAreIdenticalFactory: itemsAreIdenticalFactory)
+        }
         self.databaseWriter = databaseWriter
-        self.itemsAreIdentical = itemsAreIdentical
         self.queue = queue
     }
 
@@ -96,10 +130,10 @@ public final class FetchedRecordsController<Record: RowConvertible> {
         // observer is added on the same serialized queue as transaction
         // callbacks.
         try databaseWriter.write { db in
-            let initialItems = try request.fetchAll(db)
+            let initialItems = try Item<Record>.fetchAll(db, request)
             fetchedItems = initialItems
             if let fetchAndNotifyChanges = fetchAndNotifyChanges {
-                let observer = FetchedRecordsObserver(selectionInfo: request.selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
+                let observer = FetchedRecordsObserver(selectionInfo: self.selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
                 self.observer = observer
                 observer.items = initialItems
                 db.add(transactionObserver: observer)
@@ -126,8 +160,11 @@ public final class FetchedRecordsController<Record: RowConvertible> {
     ///
     /// This method must be used from the controller's dispatch queue (the
     /// main queue unless stated otherwise in the controller's initializer).
-    public func setRequest<Request>(_ request: Request) throws where Request: TypedRequest, Request.Fetched == Record {
-        self.request = try databaseWriter.unsafeRead { db in try ObservedRequest(db, request: request) }
+    public func setRequest<Request>(_ request: Request) throws where Request: TypedRequest, Request.RowDecoder == Record {
+        self.request = request
+        (self.selectionInfo, self.itemsAreIdentical) = try databaseWriter.unsafeRead { db in
+            try FetchedRecordsController.fetchSelectionInfoAndComparator(db, request: request, itemsAreIdenticalFactory: itemsAreIdenticalFactory)
+        }
         
         // No observer: don't look for changes
         guard let observer = observer else { return }
@@ -142,7 +179,7 @@ public final class FetchedRecordsController<Record: RowConvertible> {
         // and notify eventual changes
         let initialItems = fetchedItems
         databaseWriter.write { db in
-            let observer = FetchedRecordsObserver(selectionInfo: self.request.selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
+            let observer = FetchedRecordsObserver(selectionInfo: selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
             self.observer = observer
             observer.items = initialItems
             db.add(transactionObserver: observer)
@@ -156,7 +193,7 @@ public final class FetchedRecordsController<Record: RowConvertible> {
     /// This method must be used from the controller's dispatch queue (the
     /// main queue unless stated otherwise in the controller's initializer).
     public func setRequest(sql: String, arguments: StatementArguments? = nil, adapter: RowAdapter? = nil) throws {
-        try setRequest(SQLRequest(sql, arguments: arguments, adapter: adapter).bound(to: Record.self))
+        try setRequest(SQLRequest(sql, arguments: arguments, adapter: adapter).asRequest(of: Record.self))
     }
     
     /// Registers changes notification callbacks.
@@ -174,11 +211,33 @@ public final class FetchedRecordsController<Record: RowConvertible> {
         onChange: ((FetchedRecordsController<Record>, Record, FetchedRecordChange) -> ())? = nil,
         didChange: ((FetchedRecordsController<Record>) -> ())? = nil)
     {
+        // I hate you SE-0110.
+        let wrappedWillChange: ((FetchedRecordsController<Record>, Void) -> ())?
+        if let willChange = willChange {
+            wrappedWillChange = { (controller, _) in willChange(controller) }
+        } else {
+            wrappedWillChange = nil
+        }
+        
+        let wrappedDidChange: ((FetchedRecordsController<Record>, Void) -> ())?
+        if let didChange = didChange {
+            wrappedDidChange = { (controller, _) in didChange(controller) }
+        } else {
+            wrappedDidChange = nil
+        }
+        
         trackChanges(
             fetchAlongside: { _ in },
-            willChange: willChange.flatMap { callback in { (controller, _) in callback(controller) } },
+            willChange: wrappedWillChange,
             onChange: onChange,
-            didChange: didChange.flatMap { callback in { (controller, _) in callback(controller) } })
+            didChange: wrappedDidChange)
+        
+        // Without bloody SE-0110:
+//        trackChanges(
+//            fetchAlongside: { _ in },
+//            willChange: willChange.map { callback in { (controller, _) in callback(controller) } },
+//            onChange: onChange,
+//            didChange: didChange.map { callback in { (controller, _) in callback(controller) } })
     }
 
     /// Registers changes notification callbacks.
@@ -240,7 +299,7 @@ public final class FetchedRecordsController<Record: RowConvertible> {
                 onChange: onChange,
                 didChange: didChange,
                 didProcessTransaction: didProcessTransaction)
-            let observer = FetchedRecordsObserver(selectionInfo: request.selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
+            let observer = FetchedRecordsObserver(selectionInfo: selectionInfo, fetchAndNotifyChanges: fetchAndNotifyChanges)
             self.observer = observer
             if let initialItems = initialItems {
                 observer.items = initialItems
@@ -311,31 +370,33 @@ public final class FetchedRecordsController<Record: RowConvertible> {
     fileprivate var fetchedItems: [Item<Record>]?
     
     /// The record comparator
-    fileprivate var itemsAreIdentical: ItemComparator<Record>
+    private var itemsAreIdentical: ItemComparator<Record>
+    
+    /// The record comparator factory (support for request change)
+    private let itemsAreIdenticalFactory: ItemComparatorFactory<Record>
 
     /// The request
-    fileprivate var request: ObservedRequest<Record>
+    fileprivate var request: Request
+    
+    /// The observed selection info
+    private var selectionInfo : SelectStatement.SelectionInfo
     
     /// The eventual current database observer
     private var observer: FetchedRecordsObserver<Record>?
     
     /// The eventual error handler
     fileprivate var errorHandler: ((FetchedRecordsController<Record>, Error) -> ())?
-}
-
-fileprivate struct ObservedRequest<Record: RowConvertible> : TypedRequest {
-    typealias Fetched = Item<Record>
-    let request: Request
-    let selectionInfo: SelectStatement.SelectionInfo
     
-    init(_ db: Database, request: Request) throws {
+    private static func fetchSelectionInfoAndComparator(
+        _ db: Database,
+        request: Request,
+        itemsAreIdenticalFactory: ItemComparatorFactory<Record>) throws
+        -> (SelectStatement.SelectionInfo, ItemComparator<Record>)
+    {
         let (statement, _) = try request.prepare(db)
-        self.request = request
-        self.selectionInfo = statement.selectionInfo
-    }
-    
-    func prepare(_ db: Database) throws -> (SelectStatement, RowAdapter?) {
-        return try request.prepare(db)
+        let selectionInfo = statement.selectionInfo
+        let itemsAreIdentical = try itemsAreIdenticalFactory(db)
+        return (selectionInfo, itemsAreIdentical)
     }
 }
 
@@ -372,8 +433,17 @@ extension FetchedRecordsController where Record: TableMapping {
     ///         The fetched records controller tracking callbacks will be
     ///         notified of changes in this queue. The controller itself must be
     ///         used from this queue.
-    public convenience init(_ databaseWriter: DatabaseWriter, sql: String, arguments: StatementArguments? = nil, adapter: RowAdapter? = nil, queue: DispatchQueue = .main) throws {
-        try self.init(databaseWriter, request: SQLRequest(sql, arguments: arguments, adapter: adapter).bound(to: Record.self), queue: queue)
+    public convenience init(
+        _ databaseWriter: DatabaseWriter,
+        sql: String,
+        arguments: StatementArguments? = nil,
+        adapter: RowAdapter? = nil,
+        queue: DispatchQueue = .main) throws
+    {
+        try self.init(
+            databaseWriter,
+            request: SQLRequest(sql, arguments: arguments, adapter: adapter).asRequest(of: Record.self),
+            queue: queue)
     }
     
     /// Creates a fetched records controller initialized from a fetch request
@@ -402,9 +472,43 @@ extension FetchedRecordsController where Record: TableMapping {
     ///         The fetched records controller tracking callbacks will be
     ///         notified of changes in this queue. The controller itself must be
     ///         used from this queue.
-    public convenience init<Request>(_ databaseWriter: DatabaseWriter, request: Request, queue: DispatchQueue = .main) throws where Request: TypedRequest, Request.Fetched == Record {
-        let rowComparator = try databaseWriter.unsafeRead { db in try Record.primaryKeyRowComparator(db) }
-        try self.init(databaseWriter, request: request, queue: queue, itemsAreIdentical: { rowComparator($0.row, $1.row) })
+    public convenience init<Request>(
+        _ databaseWriter: DatabaseWriter,
+        request: Request,
+        queue: DispatchQueue = .main) throws
+        where Request: TypedRequest, Request.RowDecoder == Record
+    {
+        // Builds a function that returns true if and only if two items
+        // have the same primary key and primary keys contain at least one
+        // non-null value.
+        let itemsAreIdenticalFactory: ItemComparatorFactory<Record> = { db in
+            // Extract primary key columns from database table
+            let columns = try db.primaryKey(Record.databaseTableName).columns
+            
+            // Compare primary keys
+            assert(!columns.isEmpty)
+            return { (lItem, rItem) in
+                var notNullValue = false
+                for column in columns {
+                    let lValue: DatabaseValue = lItem.row[column]
+                    let rValue: DatabaseValue = rItem.row[column]
+                    if lValue != rValue {
+                        // different primary keys
+                        return false
+                    }
+                    if !lValue.isNull || !rValue.isNull {
+                        notNullValue = true
+                    }
+                }
+                // identical primary keys iff at least one value is not null
+                return notNullValue
+            }
+        }
+        try self.init(
+            databaseWriter,
+            request: request,
+            queue: queue,
+            itemsAreIdenticalFactory: itemsAreIdenticalFactory)
     }
 }
 
@@ -435,8 +539,7 @@ private final class FetchedRecordsObserver<Record: RowConvertible> : Transaction
     }
     
     func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool {
-        // If impact is unknown, assume true
-        return eventKind.impacts(selectionInfo) ?? true
+        return eventKind.impacts(selectionInfo)
     }
     
     #if SQLITE_ENABLE_PREUPDATE_HOOK
@@ -474,7 +577,7 @@ private final class FetchedRecordsObserver<Record: RowConvertible> : Transaction
 
 // MARK: - Changes
 
-fileprivate func makeFetchFunction<Record, T>(
+private func makeFetchFunction<Record, T>(
     controller: FetchedRecordsController<Record>,
     fetchAlongside: @escaping (Database) throws -> T,
     willProcessTransaction: @escaping () -> (),
@@ -522,8 +625,8 @@ fileprivate func makeFetchFunction<Record, T>(
         var result: Result<(fetchedItems: [Item<Record>], fetchedAlongside: T)>? = nil
         do {
             try databaseWriter.readFromCurrentState { db in
-                result = Result.wrap { try (
-                    fetchedItems: request.fetchAll(db),
+                result = Result { try (
+                    fetchedItems: Item<Record>.fetchAll(db, request),
                     fetchedAlongside: fetchAlongside(db)) }
                 semaphore.signal()
             }
@@ -549,7 +652,7 @@ fileprivate func makeFetchFunction<Record, T>(
     }
 }
 
-fileprivate func makeFetchAndNotifyChangesFunction<Record, T>(
+private func makeFetchAndNotifyChangesFunction<Record, T>(
     controller: FetchedRecordsController<Record>,
     fetchAlongside: @escaping (Database) throws -> T,
     itemsAreIdentical: @escaping ItemComparator<Record>,
@@ -619,7 +722,7 @@ fileprivate func makeFetchAndNotifyChangesFunction<Record, T>(
     }
 }
 
-fileprivate func computeChanges<Record>(from s: [Item<Record>], to t: [Item<Record>], itemsAreIdentical: ItemComparator<Record>) -> [ItemChange<Record>] {
+private func computeChanges<Record>(from s: [Item<Record>], to t: [Item<Record>], itemsAreIdentical: ItemComparator<Record>) -> [ItemChange<Record>] {
     let m = s.count
     let n = t.count
     
@@ -691,7 +794,7 @@ fileprivate func computeChanges<Record>(from s: [Item<Record>], to t: [Item<Reco
             func changedValues(from oldRow: Row, to newRow: Row) -> [String: DatabaseValue] {
                 var changedValues: [String: DatabaseValue] = [:]
                 for (column, newValue) in newRow {
-                    let oldValue: DatabaseValue? = oldRow.value(named: column)
+                    let oldValue: DatabaseValue? = oldRow[column]
                     if newValue != oldValue {
                         changedValues[column] = oldValue
                     }
@@ -755,7 +858,7 @@ fileprivate func computeChanges<Record>(from s: [Item<Record>], to t: [Item<Reco
     return standardize(changes: d[m][n], itemsAreIdentical: itemsAreIdentical)
 }
 
-fileprivate func identicalItemArrays<Record>(_ lhs: [Item<Record>], _ rhs: [Item<Record>]) -> Bool {
+private func identicalItemArrays<Record>(_ lhs: [Item<Record>], _ rhs: [Item<Record>]) -> Bool {
     guard lhs.count == rhs.count else {
         return false
     }
@@ -770,7 +873,8 @@ fileprivate func identicalItemArrays<Record>(_ lhs: [Item<Record>], _ rhs: [Item
 
 // MARK: - UITableView Support
 
-fileprivate typealias ItemComparator<Record: RowConvertible> = (Item<Record>, Item<Record>) -> Bool
+private typealias ItemComparator<Record: RowConvertible> = (Item<Record>, Item<Record>) -> Bool
+private typealias ItemComparatorFactory<Record: RowConvertible> = (Database) throws -> ItemComparator<Record>
 
 extension FetchedRecordsController {
     
@@ -815,7 +919,7 @@ extension FetchedRecordsController where Record: MutablePersistable {
     /// - returns: The index path of *record* in the fetched records, or nil
     ///   if record could not be found.
     public func indexPath(for record: Record) -> IndexPath? {
-        let item = Item<Record>(row: Row(record.persistentDictionary))
+        let item = Item<Record>(row: Row(record))
         guard let fetchedItems = fetchedItems, let index = fetchedItems.index(where: { itemsAreIdentical($0, item) }) else {
             return nil
         }
@@ -949,11 +1053,7 @@ private final class Item<T: RowConvertible> : RowConvertible, Equatable {
     let row: Row
     
     // Records are lazily loaded
-    lazy var record: T = {
-        var record = T(row: self.row)
-        record.awakeFromFetch(row: self.row)
-        return record
-    }()
+    lazy var record: T = T(row: self.row)
     
     init(row: Row) {
         self.row = row.copy()

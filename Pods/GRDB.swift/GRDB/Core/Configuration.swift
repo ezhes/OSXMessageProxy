@@ -1,7 +1,8 @@
 import Foundation
-
 #if SWIFT_PACKAGE
     import CSQLite
+#elseif !GRDBCUSTOMSQLITE && !GRDBCIPHER
+    import SQLite3
 #endif
 
 /// Configuration for a DatabaseQueue or DatabasePool.
@@ -39,8 +40,8 @@ public struct Configuration {
     
     /// The default kind of transaction.
     ///
-    /// Default: Immediate
-    public var defaultTransactionKind: Database.TransactionKind = .immediate
+    /// Default: deferred
+    public var defaultTransactionKind: Database.TransactionKind = .deferred
     
     
     // MARK: - Concurrency

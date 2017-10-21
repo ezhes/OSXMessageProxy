@@ -1,5 +1,7 @@
 #if SWIFT_PACKAGE
     import CSQLite
+#elseif !GRDBCUSTOMSQLITE && !GRDBCIPHER
+    import SQLite3
 #endif
 
 /// The protocol for all types that can fetch values from a database.
@@ -79,14 +81,47 @@ public protocol DatabaseReader : class {
     ///   happen while establishing the read access to the database.
     func unsafeRead<T>(_ block: (Database) throws -> T) throws -> T
     
+    /// Synchronously executes a block that takes a database connection, and
+    /// returns its result.
+    ///
+    /// The two guarantees of the safe `read` method are lifted:
+    ///
+    /// The block argument is not isolated: eventual concurrent database updates
+    /// are visible inside the block:
+    ///
+    ///     try reader.unsafeReentrantRead { db in
+    ///         // Those two values may be different because some other thread
+    ///         // may have inserted or deleted a wine between the two requests:
+    ///         let count1 = try Int.fetchOne(db, "SELECT COUNT(*) FROM wines")!
+    ///         let count2 = try Int.fetchOne(db, "SELECT COUNT(*) FROM wines")!
+    ///     }
+    ///
+    /// Cursor iterations are isolated, though:
+    ///
+    ///     try reader.unsafeReentrantRead { db in
+    ///         // No concurrent update can mess with this iteration:
+    ///         let rows = try Row.fetchCursor(db, "SELECT ...")
+    ///         while let row = try rows.next() { ... }
+    ///     }
+    ///
+    /// The block argument is not prevented from writing (DatabaseQueue, in
+    /// particular, will accept database modifications in `unsafeReentrantRead`).
+    ///
+    /// - parameter block: A block that accesses the database.
+    /// - throws: The error thrown by the block, or any DatabaseError that would
+    ///   happen while establishing the read access to the database.
+    ///
+    /// This method is reentrant. It should be avoided because it fosters
+    /// dangerous concurrency practices.
+    func unsafeReentrantRead<T>(_ block: (Database) throws -> T) throws -> T
+    
     
     // MARK: - Functions
     
     /// Add or redefine an SQL function.
     ///
-    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { databaseValues in
-    ///         let dbv = databaseValues.first!
-    ///         guard let int = dbv.value() as Int? else {
+    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { dbValues in
+    ///         guard let int = Int.fromDatabaseValue(dbValues[0]) else {
     ///             return nil
     ///         }
     ///         return int + 1
@@ -171,5 +206,46 @@ extension DatabaseReader {
                 dbDest.clearSchemaCache()
             }
         }
+    }
+}
+
+/// A type-erased DatabaseReader
+///
+/// Instances of AnyDatabaseReader forward their methods to an arbitrary
+/// underlying database reader.
+public final class AnyDatabaseReader : DatabaseReader {
+    private let base: DatabaseReader
+    
+    /// Creates a database reader that wraps a base database reader.
+    public init(_ base: DatabaseReader) {
+        self.base = base
+    }
+    
+    public func read<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.read(block)
+    }
+    
+    public func unsafeRead<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.unsafeRead(block)
+    }
+    
+    public func unsafeReentrantRead<T>(_ block: (Database) throws -> T) throws -> T {
+        return try base.unsafeReentrantRead(block)
+    }
+    
+    public func add(function: DatabaseFunction) {
+        base.add(function: function)
+    }
+    
+    public func remove(function: DatabaseFunction) {
+        base.remove(function: function)
+    }
+    
+    public func add(collation: DatabaseCollation) {
+        base.add(collation: collation)
+    }
+    
+    public func remove(collation: DatabaseCollation) {
+        base.remove(collation: collation)
     }
 }

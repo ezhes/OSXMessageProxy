@@ -6,7 +6,7 @@ target 'MessageProxy' do
   use_frameworks!
 
   # Pods for MessageProxy
-  pod 'GRDB.swift'
+  pod 'GRDB.swift', "~> 2.0.3"
   pod "GCDWebServer", "~> 3.3.3"
   pod "Sparkle"
   pod 'BlueSocket'

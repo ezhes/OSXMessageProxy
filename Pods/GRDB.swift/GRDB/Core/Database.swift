@@ -1,7 +1,8 @@
 import Foundation
-
 #if SWIFT_PACKAGE
     import CSQLite
+#elseif !GRDBCUSTOMSQLITE && !GRDBCIPHER
+    import SQLite3
 #endif
 
 /// A raw SQLite connection, suitable for the SQLite C API.
@@ -10,6 +11,7 @@ public typealias SQLiteConnection = OpaquePointer
 /// A raw SQLite function argument.
 typealias SQLiteValue = OpaquePointer
 
+let SQLITE_TRANSIENT = unsafeBitCast(OpaquePointer(bitPattern: -1), to: sqlite3_destructor_type.self)
 
 /// A Database connection.
 ///
@@ -92,6 +94,7 @@ public final class Database {
             self.rawValue = rawValue
         }
         
+        /// The hash value
         public var hashValue: Int {
             return rawValue.hashValue
         }
@@ -119,7 +122,7 @@ public final class Database {
     
     /// An SQL column type.
     ///
-    ///     try db.create(table: "persons") { t in
+    ///     try db.create(table: "players") { t in
     ///         t.column("id", .integer).primaryKey()
     ///         t.column("title", .text)
     ///     }
@@ -136,6 +139,7 @@ public final class Database {
             self.rawValue = rawValue
         }
         
+        /// The hash value
         public var hashValue: Int {
             return rawValue.hashValue
         }
@@ -209,15 +213,50 @@ public final class Database {
     
     /// The states that keep track of transaction completions in order to notify
     /// transaction observers.
-    fileprivate enum TransactionHookState {
+    private enum TransactionHookState {
         case pending
         case commit
         case rollback
         case cancelledCommit(Error)
     }
     
+    // MARK: - Error Log
+    
+    /// log function that takes an error message.
+    public typealias LogErrorFunction = (_ resultCode: ResultCode, _ message: String) -> Void
+    
+    /// The error logging function.
+    ///
+    /// Quoting https://www.sqlite.org/errlog.html:
+    ///
+    /// > SQLite can be configured to invoke a callback function containing an
+    /// > error code and a terse error message whenever anomalies occur. This
+    /// > mechanism is very helpful in tracking obscure problems that occur
+    /// > rarely and in the field. Application developers are encouraged to take
+    /// > advantage of the error logging facility of SQLite in their products,
+    /// > as it is very low CPU and memory cost but can be a huge aid
+    /// > for debugging.
+    public static var logError: LogErrorFunction? = nil
+    
+    private static func setupErrorLog() {
+        struct Impl {
+            static let setupErrorLog: () = {
+                registerErrorLogCallback { (_, code, message) in
+                    guard let log = Database.logError else { return }
+                    guard let message = message.map({ String(cString: $0) }) else { return }
+                    let resultCode = ResultCode(rawValue: code)
+                    log(resultCode, message)
+                }
+            }()
+        }
+        Impl.setupErrorLog
+    }
+    
     
     // MARK: - Database Information
+    
+    /// The list of compile options used when building SQLite
+    static let sqliteCompileOptions: Set<String> = DatabaseQueue().inDatabase { try! Set(String.fetchCursor($0, "PRAGMA COMPILE_OPTIONS")) }
     
     /// The database configuration
     public let configuration: Configuration
@@ -259,40 +298,79 @@ public final class Database {
     var lastErrorMessage: String? { return String(cString: sqlite3_errmsg(sqliteConnection)) }
     
     /// True if the database connection is currently in a transaction.
-    public var isInsideTransaction: Bool { return isInsideExplicitTransaction || !savepointStack.isEmpty }
-    
-    /// Set by BEGIN/ROLLBACK/COMMIT transaction statements.
-    fileprivate var isInsideExplicitTransaction: Bool = false
+    public var isInsideTransaction: Bool {
+        // https://sqlite.org/c3ref/get_autocommit.html
+        //
+        // > The sqlite3_get_autocommit() interface returns non-zero or zero if
+        // > the given database connection is or is not in autocommit mode,
+        // > respectively.
+        //
+        // > Autocommit mode is on by default. Autocommit mode is disabled by a
+        // > BEGIN statement. Autocommit mode is re-enabled by a COMMIT
+        // > or ROLLBACK.
+        return sqlite3_get_autocommit(sqliteConnection) == 0
+    }
     
     /// Set by SAVEPOINT/COMMIT/ROLLBACK/RELEASE savepoint statements.
-    fileprivate var savepointStack = SavepointStack()
+    private var savepointStack = SavepointStack()
     
     /// Traces transaction hooks
-    fileprivate var transactionHookState: TransactionHookState = .pending
+    private var transactionHookState: TransactionHookState = .pending
     
     /// Transaction observers
-    fileprivate var transactionObservers = [WeakTransationObserver]()
-    fileprivate var activeTransactionObservers = [WeakTransationObserver]()  // subset of transactionObservers, set in updateStatementWillExecute
+    private var transactionObservers = [ManagedTransactionObserver]()
+    private var activeTransactionObservers = [ManagedTransactionObserver]()  // subset of transactionObservers, set in updateStatementWillExecute
     
     /// See setupBusyMode()
     private var busyCallback: BusyCallback?
     
     /// Available functions
-    fileprivate var functions = Set<DatabaseFunction>()
+    private var functions = Set<DatabaseFunction>()
     
     /// Available collations
-    fileprivate var collations = Set<DatabaseCollation>()
+    private var collations = Set<DatabaseCollation>()
+    
+    /// Current authorizer
+    var authorizer: StatementAuthorizer? {
+        didSet {
+            switch (oldValue, authorizer) {
+            case (.some, nil):
+                sqlite3_set_authorizer(sqliteConnection, nil, nil)
+            case (nil, .some):
+                let dbPointer = Unmanaged.passUnretained(self).toOpaque()
+                sqlite3_set_authorizer(sqliteConnection, { (dbPointer, actionCode, cString1, cString2, cString3, cString4) -> Int32 in
+                    guard let dbPointer = dbPointer else { return SQLITE_OK }
+                    let db = Unmanaged<Database>.fromOpaque(dbPointer).takeUnretainedValue()
+                    return db.authorizer!.authorize(actionCode, cString1, cString2, cString3, cString4)
+                }, dbPointer)
+            default:
+                break
+            }
+        }
+    }
     
     /// Schema Cache
     var schemaCache: DatabaseSchemaCache    // internal so that it can be tested
-    
-    /// Statement cache. Not part of the schema cache because statements belong
-    /// to this connection, while schema cache can be shared with
+
+    /// Statement caches are not part of the schema cache because statements
+    /// belong to this connection, while schema cache can be shared with
     /// other connections.
-    fileprivate var selectStatementCache: [String: SelectStatement] = [:]
-    fileprivate var updateStatementCache: [String: UpdateStatement] = [:]
+    ///
+    /// There are two statement caches: one for statements generated by the
+    /// user, and one for the statements generated by GRDB. Those are separated
+    /// so that GRDB has no opportunity to inadvertently modify the arguments of
+    /// user statements.
+    enum StatementCacheName {
+        case grdb
+        case user
+    }
+    private lazy var grdbStatementCache: StatementCache = StatementCache(database: self)
+    private lazy var userStatementCache: StatementCache = StatementCache(database: self)
     
     init(path: String, configuration: Configuration, schemaCache: DatabaseSchemaCache) throws {
+        // Error log setup must happen before any database connection
+        Database.setupErrorLog()
+        
         // See https://www.sqlite.org/c3ref/open.html
         var sqliteConnection: SQLiteConnection? = nil
         let code = sqlite3_open_v2(path, &sqliteConnection, configuration.SQLiteOpenFlags, nil)
@@ -357,7 +435,7 @@ public final class Database {
                 }
             }
         } catch {
-            closeConnection(sqliteConnection!)
+            Database.close(connection: sqliteConnection!)
             throw error
         }
         
@@ -377,7 +455,6 @@ public final class Database {
         setupDefaultFunctions()
         setupDefaultCollations()
         setupTransactionHooks()
-        installDefaultAuthorizer()
     }
     
     /// This method must be called before database deallocation
@@ -386,9 +463,9 @@ public final class Database {
         assert(!isClosed)
         
         configuration.SQLiteConnectionWillClose?(sqliteConnection)
-        updateStatementCache = [:]
-        selectStatementCache = [:]
-        closeConnection(sqliteConnection)
+        grdbStatementCache.clear()
+        userStatementCache.clear()
+        Database.close(connection: sqliteConnection)
         isClosed = true
         configuration.SQLiteConnectionDidClose?()
     }
@@ -401,8 +478,8 @@ public final class Database {
     func releaseMemory() {
         sqlite3_db_release_memory(sqliteConnection)
         schemaCache.clear()
-        updateStatementCache = [:]
-        selectStatementCache = [:]
+        grdbStatementCache.clear()
+        userStatementCache.clear()
     }
     
     private func setupForeignKeys() throws {
@@ -416,12 +493,44 @@ public final class Database {
         guard configuration.trace != nil else {
             return
         }
-        let dbPointer = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
-        sqlite3_trace(sqliteConnection, { (dbPointer, sql) in
-            guard let sql = sql else { return }
-            let database = unsafeBitCast(dbPointer, to: Database.self)
-            database.configuration.trace!(String(cString: sql))
+        let dbPointer = Unmanaged.passUnretained(self).toOpaque()
+        // sqlite3_trace_v2 and sqlite3_expanded_sql were introduced in SQLite 3.14.0 http://www.sqlite.org/changes.html#version_3_14
+        // It is available from iOS 10.0 and OS X 10.12 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
+        #if GRDBCUSTOMSQLITE
+            sqlite3_trace_v2(sqliteConnection, UInt32(SQLITE_TRACE_STMT), { (mask, dbPointer, stmt, unexpandedSQL) -> Int32 in
+                guard let stmt = stmt else { return SQLITE_OK }
+                guard let expandedSQLCString = sqlite3_expanded_sql(OpaquePointer(stmt)) else { return SQLITE_OK }
+                let sql = String(cString: expandedSQLCString)
+                sqlite3_free(expandedSQLCString)
+                let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
+                db.configuration.trace!(sql)
+                return SQLITE_OK
             }, dbPointer)
+        #elseif GRDBCIPHER
+            sqlite3_trace(sqliteConnection, { (dbPointer, sql) in
+                guard let sql = sql.map({ String(cString: $0) }) else { return }
+                let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
+                db.configuration.trace!(sql)
+            }, dbPointer)
+        #else
+            if #available(iOS 10.0, OSX 10.12, watchOS 3.0, *) {
+                sqlite3_trace_v2(sqliteConnection, UInt32(SQLITE_TRACE_STMT), { (mask, dbPointer, stmt, unexpandedSQL) -> Int32 in
+                    guard let stmt = stmt else { return SQLITE_OK }
+                    guard let expandedSQLCString = sqlite3_expanded_sql(OpaquePointer(stmt)) else { return SQLITE_OK }
+                    let sql = String(cString: expandedSQLCString)
+                    sqlite3_free(expandedSQLCString)
+                    let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
+                    db.configuration.trace!(sql)
+                    return SQLITE_OK
+                }, dbPointer)
+            } else {
+                sqlite3_trace(sqliteConnection, { (dbPointer, sql) in
+                    guard let sql = sql.map({ String(cString: $0) }) else { return }
+                    let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
+                    db.configuration.trace!(sql)
+                }, dbPointer)
+            }
+        #endif
     }
     
     private func setupBusyMode() {
@@ -435,12 +544,12 @@ public final class Database {
             
         case .callback(let callback):
             busyCallback = callback
-            let dbPointer = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
+            let dbPointer = Unmanaged.passUnretained(self).toOpaque()
             sqlite3_busy_handler(
                 sqliteConnection,
                 { (dbPointer, numberOfTries) in
-                    let database = unsafeBitCast(dbPointer, to: Database.self)
-                    let callback = database.busyCallback!
+                    let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
+                    let callback = db.busyCallback!
                     return callback(Int(numberOfTries)) ? 1 : 0
                 },
                 dbPointer)
@@ -468,10 +577,10 @@ public final class Database {
     }
     
     private func setupTransactionHooks() {
-        let dbPointer = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
-        
+        let dbPointer = Unmanaged.passUnretained(self).toOpaque()
+
         sqlite3_commit_hook(sqliteConnection, { dbPointer in
-            let db = unsafeBitCast(dbPointer, to: Database.self)
+            let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
             do {
                 try db.willCommit()
                 db.transactionHookState = .commit
@@ -486,7 +595,7 @@ public final class Database {
         
         
         sqlite3_rollback_hook(sqliteConnection, { dbPointer in
-            let db = unsafeBitCast(dbPointer, to: Database.self)
+            let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
             switch db.transactionHookState {
             case .cancelledCommit:
                 // Next step: updateStatementDidFail()
@@ -498,33 +607,42 @@ public final class Database {
         }, dbPointer)
     }
     
-    fileprivate func installDefaultAuthorizer() {
-        // https://www.sqlite.org/capi3ref.html#sqlite3_set_authorizer
-        // > When sqlite3_prepare_v2() is used to prepare a statement, the
-        // > statement might be re-prepared during sqlite3_step() due to a
-        // > schema change. Hence, the application should ensure that the
-        // > correct authorizer callback remains in place during the
-        // > sqlite3_step().
-        //
-        // As a matter of fact, without this default authorizer, the truncate
-        // optimization prevents transaction observers from observing
-        // individual deletions.
-        sqlite3_set_authorizer(sqliteConnection, { (_, actionCode, CString1, CString2, CString3, CString4) -> Int32 in
-            if actionCode == SQLITE_DELETE && String(cString: CString1!) != "sqlite_master" {
-                // Prevent [truncate optimization](https://www.sqlite.org/lang_delete.html#truncateopt)
-                // so that transaction observers can observe individual deletions.
-                return SQLITE_IGNORE
+    private static func close(connection sqliteConnection: SQLiteConnection) {
+        #if GRDBCUSTOMSQLITE || GRDBCIPHER
+            close_v2(connection: sqliteConnection)
+        #else
+            if #available(iOS 8.2, OSX 10.10, OSXApplicationExtension 10.10, *) {
+                close_v2(connection: sqliteConnection)
             } else {
-                return SQLITE_OK
+                // https://www.sqlite.org/c3ref/close.html
+                // > If the database connection is associated with unfinalized prepared
+                // > statements or unfinished sqlite3_backup objects then
+                // > sqlite3_close() will leave the database connection open and
+                // > return SQLITE_BUSY.
+                let code = sqlite3_close(sqliteConnection)
+                if code != SQLITE_OK, let log = logError {
+                    // A rare situation where GRDB doesn't fatalError on
+                    // unprocessed errors.
+                    let message = String(cString: sqlite3_errmsg(sqliteConnection))
+                    log(ResultCode(rawValue: code), "could not close database: \(message)")
+                    if code == SQLITE_BUSY {
+                        // Let the user know about unfinalized statements that did
+                        // prevent the connection from closing properly.
+                        var stmt: SQLiteStatement? = sqlite3_next_stmt(sqliteConnection, nil)
+                        while stmt != nil {
+                            log(ResultCode(rawValue: code), "unfinalized statement: \(String(cString: sqlite3_sql(stmt)))")
+                            stmt = sqlite3_next_stmt(sqliteConnection, stmt)
+                        }
+                    }
+                }
             }
-        }, nil)
+        #endif
     }
-}
-
-private func closeConnection(_ sqliteConnection: SQLiteConnection) {
+    
     // sqlite3_close_v2 was added in SQLite 3.7.14 http://www.sqlite.org/changes.html#version_3_7_14
     // It is available from iOS 8.2 and OS X 10.10 https://github.com/yapstudios/YapDatabase/wiki/SQLite-version-(bundled-with-OS)
-    if sqlite3_libversion_number() >= 3007014 {
+    #if GRDBCUSTOMSQLITE || GRDBCIPHER
+    private static func close_v2(connection sqliteConnection: SQLiteConnection) {
         // https://www.sqlite.org/c3ref/close.html
         // > If sqlite3_close_v2() is called with unfinalized prepared
         // > statements and/or unfinished sqlite3_backups, then the database
@@ -532,35 +650,31 @@ private func closeConnection(_ sqliteConnection: SQLiteConnection) {
         // > be deallocated when the last prepared statement is finalized or the
         // > last sqlite3_backup is finished.
         let code = sqlite3_close_v2(sqliteConnection)
-        if code != SQLITE_OK {
-            // A rare situation where GRDB doesn't fatalError on unprocessed
-            // errors.
+        if code != SQLITE_OK, let log = logError {
+            // A rare situation where GRDB doesn't fatalError on
+            // unprocessed errors.
             let message = String(cString: sqlite3_errmsg(sqliteConnection))
-            NSLog("GRDB could not close database with error %@: %@", NSNumber(value: code), NSString(string: message))
-        }
-    } else {
-        // https://www.sqlite.org/c3ref/close.html
-        // > If the database connection is associated with unfinalized prepared
-        // > statements or unfinished sqlite3_backup objects then
-        // > sqlite3_close() will leave the database connection open and
-        // > return SQLITE_BUSY.
-        let code = sqlite3_close(sqliteConnection)
-        if code != SQLITE_OK {
-            // A rare situation where GRDB doesn't fatalError on unprocessed
-            // errors.
-            let message = String(cString: sqlite3_errmsg(sqliteConnection))
-            NSLog("GRDB could not close database with error %@: %@", NSNumber(value: code), NSString(string: message))
-            if code == SQLITE_BUSY {
-                // Let the user know about unfinalized statements that did
-                // prevent the connection from closing properly.
-                var stmt: SQLiteStatement? = sqlite3_next_stmt(sqliteConnection, nil)
-                while stmt != nil {
-                    NSLog("GRDB unfinalized statement: %@", NSString(string: String(validatingUTF8: sqlite3_sql(stmt))!))
-                    stmt = sqlite3_next_stmt(sqliteConnection, stmt)
-                }
-            }
+            log(ResultCode(rawValue: code), "could not close database: \(message)")
         }
     }
+    #else
+    @available(iOS 8.2, OSX 10.10, OSXApplicationExtension 10.10, *)
+    private static func close_v2(connection sqliteConnection: SQLiteConnection) {
+        // https://www.sqlite.org/c3ref/close.html
+        // > If sqlite3_close_v2() is called with unfinalized prepared
+        // > statements and/or unfinished sqlite3_backups, then the database
+        // > connection becomes an unusable "zombie" which will automatically
+        // > be deallocated when the last prepared statement is finalized or the
+        // > last sqlite3_backup is finished.
+        let code = sqlite3_close_v2(sqliteConnection)
+        if code != SQLITE_OK, let log = logError {
+            // A rare situation where GRDB doesn't fatalError on
+            // unprocessed errors.
+            let message = String(cString: sqlite3_errmsg(sqliteConnection))
+            log(ResultCode(rawValue: code), "could not close database: \(message)")
+        }
+    }
+    #endif
 }
 
 
@@ -571,7 +685,7 @@ extension Database {
     
     /// Returns a new prepared statement that can be reused.
     ///
-    ///     let statement = try db.makeSelectStatement("SELECT COUNT(*) FROM persons WHERE age > ?")
+    ///     let statement = try db.makeSelectStatement("SELECT COUNT(*) FROM players WHERE score > ?")
     ///     let moreThanTwentyCount = try Int.fetchOne(statement, arguments: [20])!
     ///     let moreThanThirtyCount = try Int.fetchOne(statement, arguments: [30])!
     ///
@@ -579,12 +693,58 @@ extension Database {
     /// - returns: A SelectStatement.
     /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
     public func makeSelectStatement(_ sql: String) throws -> SelectStatement {
-        return try SelectStatement(database: self, sql: sql)
+        return try makeSelectStatement(sql, prepFlags: 0)
+    }
+    
+    /// Returns a new prepared statement that can be reused.
+    ///
+    ///     let statement = try db.makeSelectStatement("SELECT COUNT(*) FROM players WHERE score > ?", prepFlags: 0)
+    ///     let moreThanTwentyCount = try Int.fetchOne(statement, arguments: [20])!
+    ///     let moreThanThirtyCount = try Int.fetchOne(statement, arguments: [30])!
+    ///
+    /// - parameter sql: An SQL query.
+    /// - parameter prepFlags: Flags for sqlite3_prepare_v3 (available from
+    ///   SQLite 3.20.0, see http://www.sqlite.org/c3ref/prepare.html)
+    /// - returns: A SelectStatement.
+    /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
+    func makeSelectStatement(_ sql: String, prepFlags: Int32) throws -> SelectStatement {
+        let statementCompilationAuthorizer = StatementCompilationAuthorizer()
+        authorizer = statementCompilationAuthorizer
+        defer { authorizer = nil }
+        
+        var statement: SelectStatement? = nil
+        let sqlCodeUnits = sql.utf8CString
+        var remainingSQL = ""
+        try sqlCodeUnits.withUnsafeBufferPointer { codeUnits in
+            let statementStart = UnsafePointer<Int8>(codeUnits.baseAddress)!
+            var statementEnd: UnsafePointer<Int8>? = nil
+            do {
+                statement = try SelectStatement(
+                    database: self,
+                    statementStart: statementStart,
+                    statementEnd: &statementEnd,
+                    prepFlags: prepFlags,
+                    authorizer: statementCompilationAuthorizer)
+            } catch is EmptyStatementError {
+                throw DatabaseError(resultCode: .SQLITE_ERROR, message: "empty statement", sql: sql, arguments: nil)
+            }
+            let remainingData = Data(
+                bytesNoCopy: UnsafeMutableRawPointer(mutating: statementEnd!),
+                count: statementStart + sqlCodeUnits.count - statementEnd! - 1,
+                deallocator: .none)
+            remainingSQL = String(data: remainingData, encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        guard remainingSQL.isEmpty else {
+            throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "Multiple statements found. To execute multiple statements, use Database.execute() instead.", sql: sql, arguments: nil)
+        }
+
+        return statement!
     }
     
     /// Returns a prepared statement that can be reused.
     ///
-    ///     let statement = try db.cachedSelectStatement("SELECT COUNT(*) FROM persons WHERE age > ?")
+    ///     let statement = try db.cachedSelectStatement("SELECT COUNT(*) FROM players WHERE score > ?")
     ///     let moreThanTwentyCount = try Int.fetchOne(statement, arguments: [20])!
     ///     let moreThanThirtyCount = try Int.fetchOne(statement, arguments: [30])!
     ///
@@ -595,18 +755,20 @@ extension Database {
     /// - returns: An UpdateStatement.
     /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
     public func cachedSelectStatement(_ sql: String) throws -> SelectStatement {
-        if let statement = selectStatementCache[sql] {
-            return statement
+        return try selectStatement(sql, fromCache: .user)
+    }
+    
+    /// Returns a prepared statement that can be reused.
+    func selectStatement(_ sql: String, fromCache cacheName: StatementCacheName) throws -> SelectStatement {
+        switch cacheName {
+        case .grdb: return try grdbStatementCache.selectStatement(sql)
+        case .user: return try userStatementCache.selectStatement(sql)
         }
-        
-        let statement = try makeSelectStatement(sql)
-        selectStatementCache[sql] = statement
-        return statement
     }
     
     /// Returns a new prepared statement that can be reused.
     ///
-    ///     let statement = try db.makeUpdateStatement("INSERT INTO persons (name) VALUES (?)")
+    ///     let statement = try db.makeUpdateStatement("INSERT INTO players (name) VALUES (?)")
     ///     try statement.execute(arguments: ["Arthur"])
     ///     try statement.execute(arguments: ["Barbara"])
     ///
@@ -614,12 +776,58 @@ extension Database {
     /// - returns: An UpdateStatement.
     /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
     public func makeUpdateStatement(_ sql: String) throws -> UpdateStatement {
-        return try UpdateStatement(database: self, sql: sql)
+        return try makeUpdateStatement(sql, prepFlags: 0)
+    }
+    
+    /// Returns a new prepared statement that can be reused.
+    ///
+    ///     let statement = try db.makeUpdateStatement("INSERT INTO players (name) VALUES (?)", prepFlags: 0)
+    ///     try statement.execute(arguments: ["Arthur"])
+    ///     try statement.execute(arguments: ["Barbara"])
+    ///
+    /// - parameter sql: An SQL query.
+    /// - parameter prepFlags: Flags for sqlite3_prepare_v3 (available from
+    ///   SQLite 3.20.0, see http://www.sqlite.org/c3ref/prepare.html)
+    /// - returns: An UpdateStatement.
+    /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
+    func makeUpdateStatement(_ sql: String, prepFlags: Int32) throws -> UpdateStatement {
+        let statementCompilationAuthorizer = StatementCompilationAuthorizer()
+        authorizer = statementCompilationAuthorizer
+        defer { authorizer = nil }
+
+        var statement: UpdateStatement? = nil
+        let sqlCodeUnits = sql.utf8CString
+        var remainingSQL = ""
+        try sqlCodeUnits.withUnsafeBufferPointer { codeUnits in
+            let statementStart = UnsafePointer<Int8>(codeUnits.baseAddress)!
+            var statementEnd: UnsafePointer<Int8>? = nil
+            do {
+                statement = try UpdateStatement(
+                    database: self,
+                    statementStart: statementStart,
+                    statementEnd: &statementEnd,
+                    prepFlags: prepFlags,
+                    authorizer: statementCompilationAuthorizer)
+            } catch is EmptyStatementError {
+                throw DatabaseError(resultCode: .SQLITE_ERROR, message: "empty statement", sql: sql, arguments: nil)
+            }
+            let remainingData = Data(
+                bytesNoCopy: UnsafeMutableRawPointer(mutating: statementEnd!),
+                count: statementStart + sqlCodeUnits.count - statementEnd! - 1,
+                deallocator: .none)
+            remainingSQL = String(data: remainingData, encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        guard remainingSQL.isEmpty else {
+            throw DatabaseError(resultCode: .SQLITE_MISUSE, message: "Multiple statements found. To execute multiple statements, use Database.execute() instead.", sql: sql, arguments: nil)
+        }
+        
+        return statement!
     }
     
     /// Returns a prepared statement that can be reused.
     ///
-    ///     let statement = try db.cachedUpdateStatement("INSERT INTO persons (name) VALUES (?)")
+    ///     let statement = try db.cachedUpdateStatement("INSERT INTO players (name) VALUES (?)")
     ///     try statement.execute(arguments: ["Arthur"])
     ///     try statement.execute(arguments: ["Barbara"])
     ///
@@ -630,26 +838,28 @@ extension Database {
     /// - returns: An UpdateStatement.
     /// - throws: A DatabaseError whenever SQLite could not parse the sql query.
     public func cachedUpdateStatement(_ sql: String) throws -> UpdateStatement {
-        if let statement = updateStatementCache[sql] {
-            return statement
+        return try updateStatement(sql, fromCache: .grdb)
+    }
+    
+    /// Returns a prepared statement that can be reused.
+    func updateStatement(_ sql: String, fromCache cacheName: StatementCacheName) throws -> UpdateStatement {
+        switch cacheName {
+        case .grdb: return try grdbStatementCache.updateStatement(sql)
+        case .user: return try userStatementCache.updateStatement(sql)
         }
-        
-        let statement = try makeUpdateStatement(sql)
-        updateStatementCache[sql] = statement
-        return statement
     }
     
     /// Executes one or several SQL statements, separated by semi-colons.
     ///
     ///     try db.execute(
-    ///         "INSERT INTO persons (name) VALUES (:name)",
+    ///         "INSERT INTO players (name) VALUES (:name)",
     ///         arguments: ["name": "Arthur"])
     ///
-    ///     try db.execute(
-    ///         "INSERT INTO persons (name) VALUES (?);" +
-    ///         "INSERT INTO persons (name) VALUES (?);" +
-    ///         "INSERT INTO persons (name) VALUES (?);",
-    ///         arguments; ['Arthur', 'Barbara', 'Craig'])
+    ///     try db.execute("""
+    ///         INSERT INTO players (name) VALUES (?);
+    ///         INSERT INTO players (name) VALUES (?);
+    ///         INSERT INTO players (name) VALUES (?);
+    ///         """, arguments; ['Arthur', 'Barbara', 'Craig'])
     ///
     /// This method may throw a DatabaseError.
     ///
@@ -659,11 +869,8 @@ extension Database {
     /// - throws: A DatabaseError whenever an SQLite error occurs.
     public func execute(_ sql: String, arguments: StatementArguments? = nil) throws {
         // This method is like sqlite3_exec (https://www.sqlite.org/c3ref/exec.html)
-        // It adds support for arguments.
-        
-        SchedulingWatchdog.preconditionValidQueue(self)
-        
-        // The tricky part is to consume arguments as statements are executed.
+        // It adds support for arguments, and the tricky part is to consume
+        // arguments as statements are executed.
         //
         // Here we build two functions:
         // - consumeArguments returns arguments for a statement
@@ -683,61 +890,37 @@ extension Database {
             }
         }
         
-        
         // Execute statements
         
         let sqlCodeUnits = sql.utf8CString
-        var error: Error?
-        
-        // During the execution of sqlite3_prepare_v2, the observer listens to
-        // authorization callbacks in order to recognize "interesting"
-        // statements. See updateStatementDidExecute().
-        let observer = StatementCompilationObserver(self)
-        observer.start()
-        
-        sqlCodeUnits.withUnsafeBufferPointer { codeUnits in
+        try sqlCodeUnits.withUnsafeBufferPointer { codeUnits in
             let sqlStart = UnsafePointer<Int8>(codeUnits.baseAddress)!
             let sqlEnd = sqlStart + sqlCodeUnits.count
             var statementStart = sqlStart
             while statementStart < sqlEnd - 1 {
-                observer.reset()
                 var statementEnd: UnsafePointer<Int8>? = nil
-                var sqliteStatement: SQLiteStatement? = nil
-                let code = sqlite3_prepare_v2(sqliteConnection, statementStart, -1, &sqliteStatement, &statementEnd)
-                guard code == SQLITE_OK else {
-                    error = DatabaseError(resultCode: code, message: lastErrorMessage, sql: sql)
-                    break
-                }
-                
-                guard sqliteStatement != nil else {
-                    // The remaining string contains only whitespace
-                    assert(String(data: Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: statementStart), count: statementEnd! - statementStart, deallocator: .none), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    break
-                }
                 
                 do {
-                    let statement = UpdateStatement(
+                    let statementCompilationAuthorizer = StatementCompilationAuthorizer()
+                    authorizer = statementCompilationAuthorizer
+                    defer { authorizer = nil }
+                    
+                    let statement = try UpdateStatement(
                         database: self,
-                        sqliteStatement: sqliteStatement!,
-                        invalidatesDatabaseSchemaCache: observer.invalidatesDatabaseSchemaCache,
-                        transactionStatementInfo: observer.transactionStatementInfo,
-                        databaseEventKinds: observer.databaseEventKinds)
+                        statementStart: statementStart,
+                        statementEnd: &statementEnd,
+                        prepFlags: 0,
+                        authorizer: statementCompilationAuthorizer)
+
                     let arguments = try consumeArguments(statement)
                     statement.unsafeSetArguments(arguments)
                     try statement.execute()
-                } catch let statementError {
-                    error = statementError
+                    
+                    statementStart = statementEnd!
+                } catch is EmptyStatementError {
                     break
                 }
-                
-                statementStart = statementEnd!
             }
-        }
-        
-        observer.stop()
-        
-        if let error = error {
-            throw error
         }
         
         // Force arguments validity: it is a programmer error to provide
@@ -754,9 +937,8 @@ extension Database {
     
     /// Add or redefine an SQL function.
     ///
-    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { databaseValues in
-    ///         let dbv = databaseValues.first!
-    ///         guard let int = dbv.value() as Int? else {
+    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { dbValues in
+    ///         guard let int = Int.fromDatabaseValue(dbValues[0]) else {
     ///             return nil
     ///         }
     ///         return int + 1
@@ -765,117 +947,13 @@ extension Database {
     ///     try Int.fetchOne(db, "SELECT succ(1)")! // 2
     public func add(function: DatabaseFunction) {
         functions.update(with: function)
-        let functionPointer = unsafeBitCast(function, to: UnsafeMutableRawPointer.self)
-        let code = sqlite3_create_function_v2(
-            sqliteConnection,
-            function.name,
-            function.argumentCount,
-            SQLITE_UTF8 | function.eTextRep,
-            functionPointer,
-            { (context, argc, argv) in
-                let function = unsafeBitCast(sqlite3_user_data(context), to: DatabaseFunction.self)
-                do {
-                    let result = try function.function(argc, argv)
-                    switch result.storage {
-                    case .null:
-                        sqlite3_result_null(context)
-                    case .int64(let int64):
-                        sqlite3_result_int64(context, int64)
-                    case .double(let double):
-                        sqlite3_result_double(context, double)
-                    case .string(let string):
-                        sqlite3_result_text(context, string, -1, SQLITE_TRANSIENT)
-                    case .blob(let data):
-                        data.withUnsafeBytes { bytes in
-                            sqlite3_result_blob(context, bytes, Int32(data.count), SQLITE_TRANSIENT)
-                        }
-                    }
-                } catch let error as DatabaseError {
-                    if let message = error.message {
-                        sqlite3_result_error(context, message, -1)
-                    }
-                    sqlite3_result_error_code(context, error.extendedResultCode.rawValue)
-                } catch {
-                    sqlite3_result_error(context, "\(error)", -1)
-                }
-            }, nil, nil, nil)
-        
-        guard code == SQLITE_OK else {
-            // Assume a GRDB bug: there is no point throwing any error.
-            fatalError(DatabaseError(resultCode: code, message: lastErrorMessage).description)
-        }
+        function.install(in: self)
     }
     
     /// Remove an SQL function.
     public func remove(function: DatabaseFunction) {
         functions.remove(function)
-        let code = sqlite3_create_function_v2(
-            sqliteConnection,
-            function.name,
-            function.argumentCount,
-            SQLITE_UTF8 | function.eTextRep,
-            nil, nil, nil, nil, nil)
-        guard code == SQLITE_OK else {
-            // Assume a GRDB bug: there is no point throwing any error.
-            fatalError(DatabaseError(resultCode: code, message: lastErrorMessage).description)
-        }
-    }
-}
-
-
-/// An SQL function.
-public final class DatabaseFunction {
-    public let name: String
-    let argumentCount: Int32
-    let pure: Bool
-    let function: (Int32, UnsafeMutablePointer<OpaquePointer?>?) throws -> DatabaseValue
-    var eTextRep: Int32 { return pure ? SQLITE_DETERMINISTIC : 0 }
-    
-    /// Returns an SQL function.
-    ///
-    ///     let fn = DatabaseFunction("succ", argumentCount: 1) { databaseValues in
-    ///         let dbv = databaseValues.first!
-    ///         guard let int = dbv.value() as Int? else {
-    ///             return nil
-    ///         }
-    ///         return int + 1
-    ///     }
-    ///     db.add(function: fn)
-    ///     try Int.fetchOne(db, "SELECT succ(1)")! // 2
-    ///
-    /// - parameters:
-    ///     - name: The function name.
-    ///     - argumentCount: The number of arguments of the function. If
-    ///       omitted, or nil, the function accepts any number of arguments.
-    ///     - pure: Whether the function is "pure", which means that its results
-    ///       only depends on its inputs. When a function is pure, SQLite has
-    ///       the opportunity to perform additional optimizations. Default value
-    ///       is false.
-    ///     - function: A function that takes an array of DatabaseValue
-    ///       arguments, and returns an optional DatabaseValueConvertible such
-    ///       as Int, String, NSDate, etc. The array is guaranteed to have
-    ///       exactly *argumentCount* elements, provided *argumentCount* is
-    ///       not nil.
-    public init(_ name: String, argumentCount: Int32? = nil, pure: Bool = false, function: @escaping ([DatabaseValue]) throws -> DatabaseValueConvertible?) {
-        self.name = name
-        self.argumentCount = argumentCount ?? -1
-        self.pure = pure
-        self.function = { (argc, argv) in
-            let arguments = (0..<Int(argc)).map { index in DatabaseValue(sqliteValue: argv.unsafelyUnwrapped[index]!) }
-            return try function(arguments)?.databaseValue ?? .null
-        }
-    }
-}
-
-extension DatabaseFunction : Hashable {
-    /// The hash value.
-    public var hashValue: Int {
-        return name.hashValue ^ argumentCount.hashValue
-    }
-    
-    /// Two functions are equal if they share the same name and argumentCount.
-    public static func == (lhs: DatabaseFunction, rhs: DatabaseFunction) -> Bool {
-        return lhs.name == rhs.name && lhs.argumentCount == rhs.argumentCount
+        function.uninstall(in: self)
     }
 }
 
@@ -894,14 +972,14 @@ extension Database {
     ///     try db.execute("CREATE TABLE files (name TEXT COLLATE localized_standard")
     public func add(collation: DatabaseCollation) {
         collations.update(with: collation)
-        let collationPointer = unsafeBitCast(collation, to: UnsafeMutableRawPointer.self)
+        let collationPointer = Unmanaged.passUnretained(collation).toOpaque()
         let code = sqlite3_create_collation_v2(
             sqliteConnection,
             collation.name,
             SQLITE_UTF8,
             collationPointer,
             { (collationPointer, length1, buffer1, length2, buffer2) -> Int32 in
-                let collation = unsafeBitCast(collationPointer, to: DatabaseCollation.self)
+                let collation = Unmanaged<DatabaseCollation>.fromOpaque(collationPointer!).takeUnretainedValue()
                 return Int32(collation.function(length1, buffer1, length2, buffer2).rawValue)
             }, nil)
         guard code == SQLITE_OK else {
@@ -949,7 +1027,7 @@ public final class DatabaseCollation {
 }
 
 extension DatabaseCollation : Hashable {
-    /// The hash value.
+    /// The hash value
     public var hashValue: Int {
         // We can't compute a hash since the equality is based on the opaque
         // sqlite3_strnicmp SQLite function.
@@ -969,7 +1047,7 @@ extension DatabaseCollation : Hashable {
 
 #if SQLITE_HAS_CODEC
 extension Database {
-    fileprivate class func set(passphrase: String, forConnection sqliteConnection: SQLiteConnection) throws {
+    private class func set(passphrase: String, forConnection sqliteConnection: SQLiteConnection) throws {
         let data = passphrase.data(using: .utf8)!
         let code = data.withUnsafeBytes { bytes in
             sqlite3_key(sqliteConnection, bytes, Int32(data.count))
@@ -1018,8 +1096,8 @@ extension Database {
         // the automatic statement recompilation (see https://www.sqlite.org/c3ref/prepare.html)
         // because the automatic statement recompilation only happens a
         // limited number of times.
-        updateStatementCache = [:]
-        selectStatementCache = [:]
+        grdbStatementCache.clear()
+        userStatementCache.clear()
     }
     
     /// Returns whether a table exists.
@@ -1028,11 +1106,14 @@ extension Database {
         return try Row.fetchOne(self, "SELECT 1 FROM (SELECT sql, type, name FROM sqlite_master UNION SELECT sql, type, name FROM sqlite_temp_master) WHERE type = 'table' AND LOWER(name) = ?", arguments: [tableName.lowercased()]) != nil
     }
     
-    /// The primary key for table named `tableName`; nil if table has no
-    /// primary key.
+    /// The primary key for table named `tableName`.
+    ///
+    /// All tables have a primary key, even when it is not explicit. When a
+    /// table has no explicit primary key, the result is the hidden
+    /// "rowid" column.
     ///
     /// - throws: A DatabaseError if table does not exist.
-    public func primaryKey(_ tableName: String) throws -> PrimaryKeyInfo? {
+    public func primaryKey(_ tableName: String) throws -> PrimaryKeyInfo {
         SchedulingWatchdog.preconditionValidQueue(self)
         
         if let primaryKey = schemaCache.primaryKey(tableName) {
@@ -1051,29 +1132,29 @@ extension Database {
         // > column in the primary key for columns that are part of the primary
         // > key.
         //
-        // CREATE TABLE persons (
+        // CREATE TABLE players (
         //   id INTEGER PRIMARY KEY,
-        //   firstName TEXT,
-        //   lastName TEXT)
+        //   name TEXT,
+        //   score INTEGER)
         //
-        // PRAGMA table_info("persons")
+        // PRAGMA table_info("players")
         //
-        // cid | name      | type    | notnull | dflt_value | pk |
-        // 0   | id        | INTEGER | 0       | NULL       | 1  |
-        // 1   | firstName | TEXT    | 0       | NULL       | 0  |
-        // 2   | lastName  | TEXT    | 0       | NULL       | 0  |
+        // cid | name  | type    | notnull | dflt_value | pk |
+        // 0   | id    | INTEGER | 0       | NULL       | 1  |
+        // 1   | name  | TEXT    | 0       | NULL       | 0  |
+        // 2   | score | INTEGER | 0       | NULL       | 0  |
         
         let columns = try self.columns(in: tableName)
         
-        let primaryKey: PrimaryKeyInfo?
+        let primaryKey: PrimaryKeyInfo
         let pkColumns = columns
             .filter { $0.primaryKeyIndex > 0 }
             .sorted { $0.primaryKeyIndex < $1.primaryKeyIndex }
         
         switch pkColumns.count {
         case 0:
-            // No primary key column
-            primaryKey = nil
+            // No explicit primary key => primary key is hidden rowID column
+            primaryKey = .hiddenRowID
         case 1:
             // Single column
             let pkColumn = pkColumns.first!
@@ -1108,7 +1189,7 @@ extension Database {
             primaryKey = .regular(pkColumns.map { $0.name })
         }
         
-        schemaCache.set(primaryKey: primaryKey, for: tableName)
+        schemaCache.set(primaryKey: primaryKey, forTable: tableName)
         return primaryKey
     }
     
@@ -1139,18 +1220,18 @@ extension Database {
         // > column in the primary key for columns that are part of the primary
         // > key.
         //
-        // CREATE TABLE persons (
+        // CREATE TABLE players (
         //   id INTEGER PRIMARY KEY,
         //   firstName TEXT,
         //   lastName TEXT)
         //
-        // PRAGMA table_info("persons")
+        // PRAGMA table_info("players")
         //
-        // cid | name      | type    | notnull | dflt_value | pk |
-        // 0   | id        | INTEGER | 0       | NULL       | 1  |
-        // 1   | firstName | TEXT    | 0       | NULL       | 0  |
-        // 2   | lastName  | TEXT    | 0       | NULL       | 0  |
-        
+        // cid | name  | type    | notnull | dflt_value | pk |
+        // 0   | id    | INTEGER | 0       | NULL       | 1  |
+        // 1   | name  | TEXT    | 0       | NULL       | 0  |
+        // 2   | score | INTEGER | 0       | NULL       | 0  |
+
         if sqlite3_libversion_number() < 3008005 {
             // Work around a bug in SQLite where PRAGMA table_info would
             // return a result even after the table was deleted.
@@ -1163,7 +1244,7 @@ extension Database {
             throw DatabaseError(message: "no such table: \(tableName)")
         }
         
-        schemaCache.set(columns: columns, forTableName: tableName)
+        schemaCache.set(columns: columns, forTable: tableName)
         return columns
     }
     
@@ -1181,38 +1262,31 @@ extension Database {
         }
         
         let indexes = try Row.fetchAll(self, "PRAGMA index_list(\(tableName.quotedDatabaseIdentifier))").map { row -> IndexInfo in
-            let indexName: String = row.value(atIndex: 1)
-            let unique: Bool = row.value(atIndex: 2)
+            let indexName: String = row[1]
+            let unique: Bool = row[2]
             let columns = try Row.fetchAll(self, "PRAGMA index_info(\(indexName.quotedDatabaseIdentifier))")
-                .map { ($0.value(atIndex: 0) as Int, $0.value(atIndex: 2) as String) }
+                .map { ($0[0] as Int, $0[2] as String) }
                 .sorted { $0.0 < $1.0 }
                 .map { $0.1 }
             return IndexInfo(name: indexName, columns: columns, unique: unique)
         }
         
-        schemaCache.set(indexes: indexes, forTableName: tableName)
+        schemaCache.set(indexes: indexes, forTable: tableName)
         return indexes
     }
     
     /// If there exists a unique key on columns, return the columns
     /// ordered as the matching index (or primay key). Case of returned columns
     /// is not guaranteed.
-    func columnsForUniqueKey(_ columns: [String], in tableName: String) throws -> [String]? {
+    func columnsForUniqueKey<T: Sequence>(_ columns: T, in tableName: String) throws -> [String]? where T.Iterator.Element == String {
         let primaryKey = try self.primaryKey(tableName) // first, so that we fail early and consistently should the table not exist
         let lowercasedColumns = Set(columns.map { $0.lowercased() })
+        if Set(primaryKey.columns.map { $0.lowercased() }) == lowercasedColumns {
+            return primaryKey.columns
+        }
         if let index = try indexes(on: tableName).first(where: { index in index.isUnique && Set(index.columns.map { $0.lowercased() }) == lowercasedColumns }) {
             // There is an explicit unique index on the columns
             return index.columns
-        }
-        if let lowercasedColumn = lowercasedColumns.first, lowercasedColumns.count == 1 {
-            if let rowIDColumnName = primaryKey?.rowIDColumn, rowIDColumnName.lowercased() == lowercasedColumn {
-                // An explicit INTEGER PRIMARY KEY column is a unique key.
-                return [rowIDColumnName]
-            }
-            if try primaryKey == nil && ["rowid", "oid", "_rowid_"].contains(lowercasedColumn) && !self.columns(in: tableName).map({ $0.name.lowercased() }).contains(lowercasedColumn) {
-                // A rowid, oid or _rowid_ column is a unique key when there is no explicit primary key and the column is not already used.
-                return [lowercasedColumn]
-            }
         }
         return nil
     }
@@ -1223,21 +1297,67 @@ extension Database {
         return try columnsForUniqueKey(Array(columns), in: tableName) != nil
     }
     
+    /// The foreign keys defined on table named `tableName`.
+    public func foreignKeys(on tableName: String) throws -> [ForeignKeyInfo] {
+        if let foreignKeys = schemaCache.foreignKeys(on: tableName) {
+            return foreignKeys
+        }
+        
+        var rawForeignKeys: [(destinationTable: String, mapping: [(origin: String, destination: String?, seq: Int)])] = []
+        var previousId: Int? = nil
+        for row in try Row.fetchAll(self, "PRAGMA foreign_key_list(\(tableName.quotedDatabaseIdentifier))") {
+            // row = <Row id:0 seq:0 table:"parents" from:"parentId" to:"id" on_update:"..." on_delete:"..." match:"...">
+            let id: Int = row[0]
+            let seq: Int = row[1]
+            let table: String = row[2]
+            let origin: String = row[3]
+            let destination: String? = row[4]
+            
+            if previousId == id {
+                rawForeignKeys[rawForeignKeys.count - 1].mapping.append((origin: origin, destination: destination, seq: seq))
+            } else {
+                rawForeignKeys.append((destinationTable: table, mapping: [(origin: origin, destination: destination, seq: seq)]))
+                previousId = id
+            }
+        }
+        
+        let foreignKeys = try rawForeignKeys.map { (destinationTable, columnMapping) -> ForeignKeyInfo in
+            let orderedMapping = columnMapping
+                .sorted { $0.seq < $1.seq }
+                .map { (origin: $0.origin, destination: $0 .destination) }
+            
+            let completeMapping: [(origin: String, destination: String)]
+            if orderedMapping.contains(where: { (_, destination) in destination == nil }) {
+                let pk = try primaryKey(destinationTable)
+                completeMapping = zip(pk.columns, orderedMapping).map { (pkColumn, arrow) in
+                    (origin: arrow.origin, destination: pkColumn)
+                }
+            } else {
+                completeMapping = orderedMapping.map { (origin, destination) in
+                    (origin: origin, destination: destination!)
+                }
+            }
+            return ForeignKeyInfo(destinationTable: destinationTable, mapping: completeMapping)
+        }
+        
+        schemaCache.set(foreignKeys: foreignKeys, forTable: tableName)
+        return foreignKeys
+    }
 }
 
 /// A column of a table
 struct ColumnInfo : RowConvertible {
-    // CREATE TABLE persons (
+    // CREATE TABLE players (
     //   id INTEGER PRIMARY KEY,
     //   firstName TEXT,
     //   lastName TEXT)
     //
-    // PRAGMA table_info("persons")
+    // PRAGMA table_info("players")
     //
-    // cid | name      | type    | notnull | dflt_value | pk |
-    // 0   | id        | INTEGER | 0       | NULL       | 1  |
-    // 1   | firstName | TEXT    | 0       | NULL       | 0  |
-    // 2   | lastName  | TEXT    | 0       | NULL       | 0  |
+    // cid | name  | type    | notnull | dflt_value | pk |
+    // 0   | id    | INTEGER | 0       | NULL       | 1  |
+    // 1   | name  | TEXT    | 0       | NULL       | 0  |
+    // 2   | score | INTEGER | 0       | NULL       | 0  |
     let name: String
     let type: String
     let notNull: Bool
@@ -1245,11 +1365,11 @@ struct ColumnInfo : RowConvertible {
     let primaryKeyIndex: Int
     
     init(row: Row) {
-        name = row.value(named: "name")
-        type = row.value(named: "type")
-        notNull = row.value(named: "notnull")
-        defaultDatabaseValue = row.value(named: "dflt_value")
-        primaryKeyIndex = row.value(named: "pk")
+        name = row["name"]
+        type = row["type"]
+        notNull = row["notnull"]
+        defaultDatabaseValue = row["dflt_value"]
+        primaryKeyIndex = row["pk"]
     }
 }
 
@@ -1273,41 +1393,45 @@ public struct IndexInfo {
     }
 }
 
-/// You get primary keys from table names, with the Database.primaryKey(_)
-/// method.
+/// Primary keys are returned from the Database.primaryKey(_:) method.
 ///
-/// Primary key is nil when table has no primary key:
+/// When the table's primary key is the rowid:
 ///
 ///     // CREATE TABLE items (name TEXT)
-///     let itemPk = try db.primaryKey("items") // nil
+///     let pk = try db.primaryKey("items")
+///     pk.columns     // ["rowid"]
+///     pk.rowIDColumn // nil
+///     pk.isRowID     // true
 ///
-/// Primary keys have one or several columns. When the primary key has a single
-/// column, it may contain the row id:
-///
-///     // CREATE TABLE persons (
+///     // CREATE TABLE citizens (
 ///     //   id INTEGER PRIMARY KEY,
 ///     //   name TEXT
 ///     // )
-///     let personPk = try db.primaryKey("persons")!
-///     personPk.columns     // ["id"]
-///     personPk.rowIDColumn // "id"
+///     let pk = try db.primaryKey("citizens")!
+///     pk.columns     // ["id"]
+///     pk.rowIDColumn // "id"
+///     pk.isRowID     // true
+///
+/// When the table's primary key is not the rowid:
 ///
 ///     // CREATE TABLE countries (
 ///     //   isoCode TEXT NOT NULL PRIMARY KEY
 ///     //   name TEXT
 ///     // )
-///     let countryPk = db.primaryKey("countries")!
-///     countryPk.columns     // ["isoCode"]
-///     countryPk.rowIDColumn // nil
+///     let pk = db.primaryKey("countries")!
+///     pk.columns     // ["isoCode"]
+///     pk.rowIDColumn // nil
+///     pk.isRowID     // false
 ///
 ///     // CREATE TABLE citizenships (
-///     //   personID INTEGER NOT NULL REFERENCES persons(id)
+///     //   citizenID INTEGER NOT NULL REFERENCES citizens(id)
 ///     //   countryIsoCode TEXT NOT NULL REFERENCES countries(isoCode)
-///     //   PRIMARY KEY (personID, countryIsoCode)
+///     //   PRIMARY KEY (citizenID, countryIsoCode)
 ///     // )
-///     let citizenshipsPk = db.primaryKey("citizenships")!
-///     citizenshipsPk.columns     // ["personID", "countryIsoCode"]
-///     citizenshipsPk.rowIDColumn // nil
+///     let pk = db.primaryKey("citizenships")!
+///     pk.columns     // ["citizenID", "countryIsoCode"]
+///     pk.rowIDColumn // nil
+///     pk.isRowID     // false
 public struct PrimaryKeyInfo {
     private enum Impl {
         /// The hidden rowID.
@@ -1358,16 +1482,51 @@ public struct PrimaryKeyInfo {
             return nil
         }
     }
+    
+    /// When true, the primary key is the rowid:
+    public var isRowID: Bool {
+        switch impl {
+        case .hiddenRowID:
+            return true
+        case .rowID:
+            return true
+        case .regular:
+            return false
+        }
+    }
+}
+
+/// You get foreign keys from table names, with the
+/// `foreignKeys(on:)` method.
+public struct ForeignKeyInfo {
+    /// The name of the destination table
+    public let destinationTable: String
+    
+    /// The column to column mapping
+    public let mapping: [(origin: String, destination: String)]
+    
+    /// The origin columns
+    public var originColumns: [String] {
+        return mapping.map { $0.origin }
+    }
+    
+    /// The destination columns
+    public var destinationColumns: [String] {
+        return mapping.map { $0.destination }
+    }
 }
 
 
 // =========================================================================
-// MARK: - StatementCompilationObserver
+// MARK: - StatementAuthorizer
+
+/// A protocol around sqlite3_set_authorizer
+protocol StatementAuthorizer : class {
+    func authorize(_ actionCode: Int32, _ cString1: UnsafePointer<Int8>?, _ cString2: UnsafePointer<Int8>?, _ cString3: UnsafePointer<Int8>?, _ cString4: UnsafePointer<Int8>?) -> Int32
+}
 
 /// A class that gathers information about a statement during its compilation.
-final class StatementCompilationObserver {
-    let database: Database
-    
+final class StatementCompilationAuthorizer : StatementAuthorizer {
     /// A dictionary [tablename: Set<columnName>] of accessed columns
     var selectionInfo = SelectStatement.SelectionInfo()
     
@@ -1382,76 +1541,77 @@ final class StatementCompilationObserver {
     /// Not nil if a statement is a BEGIN/COMMIT/ROLLBACK/RELEASE transaction/savepoint statement.
     var transactionStatementInfo: UpdateStatement.TransactionStatementInfo?
     
-    var isDropTableStatement = false
+    var needsTruncateOptimizationPreventionDuringExecution = false
     
-    init(_ database: Database) {
-        self.database = database
-    }
+    private var isDropTableStatement = false
     
-    // Call this method before calling sqlite3_prepare_v2()
-    func start() {
-        let observerPointer = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
-        sqlite3_set_authorizer(database.sqliteConnection, { (observerPointer, actionCode, CString1, CString2, CString3, CString4) -> Int32 in
-            switch actionCode {
-            case SQLITE_DROP_TABLE, SQLITE_DROP_TEMP_TABLE, SQLITE_DROP_TEMP_VIEW, SQLITE_DROP_VIEW, SQLITE_DETACH, SQLITE_ALTER_TABLE, SQLITE_DROP_VTABLE, SQLITE_CREATE_INDEX, SQLITE_CREATE_TEMP_INDEX, SQLITE_DROP_INDEX, SQLITE_DROP_TEMP_INDEX:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                if actionCode == SQLITE_DROP_TABLE || actionCode == SQLITE_DROP_VTABLE {
-                    observer.isDropTableStatement = true
-                }
-                observer.invalidatesDatabaseSchemaCache = true
-            case SQLITE_READ:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                observer.selectionInfo.insert(column: String(cString: CString2!), ofTable: String(cString: CString1!))
-            case SQLITE_INSERT:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                observer.databaseEventKinds.append(.insert(tableName: String(cString: CString1!)))
-            case SQLITE_DELETE:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                let tableName = String(cString: CString1!)
-                if tableName != "sqlite_master" && !observer.isDropTableStatement {
-                    observer.databaseEventKinds.append(.delete(tableName: tableName))
-                    // Prevent [truncate optimization](https://www.sqlite.org/lang_delete.html#truncateopt)
-                    // so that transaction observers can observe individual deletions.
-                    return SQLITE_IGNORE
-                }
-            case SQLITE_UPDATE:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                observer.insertUpdateEventKind(tableName: String(cString: CString1!), columnName: String(cString: CString2!))
-            case SQLITE_TRANSACTION:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                let action = UpdateStatement.TransactionStatementInfo.TransactionAction(rawValue: String(cString: CString1!))!
-                observer.transactionStatementInfo = .transaction(action: action)
-            case SQLITE_SAVEPOINT:
-                let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                let name = String(cString: CString2!)
-                let action = UpdateStatement.TransactionStatementInfo.SavepointAction(rawValue: String(cString: CString1!))!
-                observer.transactionStatementInfo = .savepoint(name: name, action: action)
-            case SQLITE_FUNCTION:
-                let functionName = String(cString: CString2!)
-                if functionName.uppercased() == "COUNT" {
-                    // As soon as a request uses the COUNT function, we don't
-                    // know which table is involved. For example, the
-                    // `SELECT COUNT(*) FROM persons` request never ever tells
-                    // GRDB about the `persons` table.
-                    //
-                    // We ignore the actual selection.
-                    let observer = unsafeBitCast(observerPointer, to: StatementCompilationObserver.self)
-                    observer.selectionInfo = SelectStatement.SelectionInfo.unknown()
-                }
-            default:
-                break
+    func authorize(_ actionCode: Int32, _ cString1: UnsafePointer<Int8>?, _ cString2: UnsafePointer<Int8>?, _ cString3: UnsafePointer<Int8>?, _ cString4: UnsafePointer<Int8>?) -> Int32 {
+        // print("StatementCompilationAuthorizer: \(actionCode) \([cString1, cString2, cString3, cString4].flatMap { $0.map({ String(cString: $0) }) })")
+        
+        switch actionCode {
+        case SQLITE_DROP_TABLE, SQLITE_DROP_TEMP_TABLE, SQLITE_DROP_TEMP_VIEW, SQLITE_DROP_VIEW, SQLITE_DETACH, SQLITE_ALTER_TABLE, SQLITE_DROP_VTABLE, SQLITE_CREATE_INDEX, SQLITE_CREATE_TEMP_INDEX, SQLITE_DROP_INDEX, SQLITE_DROP_TEMP_INDEX:
+            if actionCode == SQLITE_DROP_TABLE || actionCode == SQLITE_DROP_VTABLE {
+                isDropTableStatement = true
+            }
+            invalidatesDatabaseSchemaCache = true
+            return SQLITE_OK
+        case SQLITE_READ:
+            guard let tableName = cString1.map({ String(cString: $0) }) else { return SQLITE_OK }
+            guard let columnName = cString2.map({ String(cString: $0) }) else { return SQLITE_OK }
+            if columnName.isEmpty {
+                // SELECT COUNT(*) FROM table
+                selectionInfo.insert(allColumnsOfTable: tableName)
+            } else {
+                // SELECT column FROM table
+                selectionInfo.insert(column: columnName, ofTable: tableName)
             }
             return SQLITE_OK
-            }, observerPointer)
-    }
-    
-    // Call this method between two calls to calling sqlite3_prepare_v2()
-    func reset() {
-        selectionInfo = SelectStatement.SelectionInfo()
-        databaseEventKinds = []
-        invalidatesDatabaseSchemaCache = false
-        transactionStatementInfo = nil
-        isDropTableStatement = false
+        case SQLITE_INSERT:
+            guard let tableName = cString1.map({ String(cString: $0) }) else { return SQLITE_OK }
+            databaseEventKinds.append(.insert(tableName: tableName))
+            return SQLITE_OK
+        case SQLITE_DELETE:
+            guard !isDropTableStatement else { return SQLITE_OK }
+            guard let tableName = cString1.map({ String(cString: $0) }), tableName != "sqlite_master" else { return SQLITE_OK }
+            databaseEventKinds.append(.delete(tableName: tableName))
+            // Prevent the [truncate optimization](https://www.sqlite.org/lang_delete.html#truncateopt)
+            // See TruncateOptimizationBlocker
+            needsTruncateOptimizationPreventionDuringExecution = true
+            return SQLITE_IGNORE
+        case SQLITE_UPDATE:
+            guard let tableName = cString1.map({ String(cString: $0) }) else { return SQLITE_OK }
+            guard let columnName = cString2.map({ String(cString: $0) }) else { return SQLITE_OK }
+            insertUpdateEventKind(tableName: tableName, columnName: columnName)
+            return SQLITE_OK
+        case SQLITE_TRANSACTION:
+            guard let rawAction = cString1.map({ String(cString: $0) }) else { return SQLITE_OK }
+            let action = UpdateStatement.TransactionStatementInfo.TransactionAction(rawValue: rawAction)!
+            transactionStatementInfo = .transaction(action: action)
+            return SQLITE_OK
+        case SQLITE_SAVEPOINT:
+            guard let rawAction = cString1.map({ String(cString: $0) }) else { return SQLITE_OK }
+            guard let savepointName = cString2.map({ String(cString: $0) }) else { return SQLITE_OK }
+            let action = UpdateStatement.TransactionStatementInfo.SavepointAction(rawValue: rawAction)!
+            transactionStatementInfo = .savepoint(name: savepointName, action: action)
+            return SQLITE_OK
+        case SQLITE_FUNCTION:
+            // Starting SQLite 3.19.0, `SELECT COUNT(*) FROM table` triggers
+            // an authorization callback for SQLITE_READ with an empty
+            // column: http://www.sqlite.org/changes.html#version_3_19_0
+            //
+            // Before SQLite 3.19.0, `SELECT COUNT(*) FROM table` does not
+            // trigger any authorization callback that tells about the
+            // counted table: any use of the COUNT function makes the
+            // selection undetermined.
+            guard sqlite3_libversion_number() < 3019000 else { return SQLITE_OK }
+            guard let functionName = cString2.map({ String(cString: $0) }) else { return SQLITE_OK }
+            if functionName.uppercased() == "COUNT" {
+                selectionInfo = SelectStatement.SelectionInfo.unknown()
+            }
+            return SQLITE_OK
+        default:
+            return SQLITE_OK
+        }
     }
     
     func insertUpdateEventKind(tableName: String, columnName: String) {
@@ -1465,10 +1625,21 @@ final class StatementCompilationObserver {
         }
         databaseEventKinds.append(.update(tableName: tableName, columnNames: [columnName]))
     }
-    
-    func stop() {
-        // Restore default authorizer
-        database.installDefaultAuthorizer()
+}
+
+/// This authorizer prevents the [truncate optimization](https://www.sqlite.org/lang_delete.html#truncateopt)
+/// which makes transaction observers unable to observe individual deletions
+/// when user runs `DELETE FROM t` statements.
+//
+/// Warning: to perform well, this authorizer requires that:
+//
+/// - It is used during statement execution, not during statement compilation.
+/// - Statement compilation was authorized with a StatementCompilationAuthorizer
+///   that has set its needsTruncateOptimizationPreventionDuringExecution flag.
+final class TruncateOptimizationBlocker : StatementAuthorizer {
+    func authorize(_ actionCode: Int32, _ cString1: UnsafePointer<Int8>?, _ cString2: UnsafePointer<Int8>?, _ cString3: UnsafePointer<Int8>?, _ cString4: UnsafePointer<Int8>?) -> Int32 {
+        // print("TruncateOptimizationBlocker: \(actionCode) \([cString1, cString2, cString3, cString4].flatMap { $0.map({ String(cString: $0) }) })")
+        return (actionCode == SQLITE_DELETE) ? SQLITE_IGNORE : SQLITE_OK
     }
 }
 
@@ -1477,6 +1648,19 @@ final class StatementCompilationObserver {
 // MARK: - Transactions & Savepoint
 
 extension Database {
+    
+    /// The extent of a transaction observation
+    ///
+    /// See Database.add(transactionObserver:extent:)
+    public enum TransactionObservationExtent {
+        /// Observation lasts until observer is deallocated
+        case observerLifetime
+        /// Observation lasts until the next transaction
+        case nextTransaction
+        /// Observation lasts until the database is closed
+        case databaseLifetime
+    }
+    
     /// Executes a block inside a database transaction.
     ///
     ///     try dbQueue.inDatabase do {
@@ -1524,7 +1708,7 @@ extension Database {
         
         if needsRollback {
             do {
-                try rollback(underlyingError: firstError)
+                try rollback()
             } catch {
                 if firstError == nil {
                     firstError = error
@@ -1601,7 +1785,7 @@ extension Database {
         if needsRollback {
             do {
                 if topLevelSavepoint {
-                    try rollback(underlyingError: firstError)
+                    try rollback()
                 } else {
                     // Rollback, and release the savepoint.
                     // Rollback alone is not enough to clear the savepoint from
@@ -1632,36 +1816,48 @@ extension Database {
         }
     }
     
-    private func rollback(underlyingError: Error?) throws {
-        do {
+    private func rollback() throws {
+        // The SQLite documentation contains two related but distinct techniques
+        // to handle rollbacks and errors:
+        //
+        // https://www.sqlite.org/lang_transaction.html#immediate
+        //
+        // > Response To Errors Within A Transaction
+        // >
+        // > If certain kinds of errors occur within a transaction, the
+        // > transaction may or may not be rolled back automatically.
+        // > The errors that can cause an automatic rollback include:
+        // >
+        // > - SQLITE_FULL: database or disk full
+        // > - SQLITE_IOERR: disk I/O error
+        // > - SQLITE_BUSY: database in use by another process
+        // > - SQLITE_NOMEM: out or memory
+        // >
+        // > [...] It is recommended that applications respond to the
+        // > errors listed above by explicitly issuing a ROLLBACK
+        // > command. If the transaction has already been rolled back
+        // > automatically by the error response, then the ROLLBACK
+        // > command will fail with an error, but no harm is caused
+        // > by this.
+        //
+        // https://sqlite.org/c3ref/get_autocommit.html
+        //
+        // > The sqlite3_get_autocommit() interface returns non-zero or zero if
+        // > the given database connection is or is not in autocommit mode,
+        // > respectively.
+        // > 
+        // > [...] If certain kinds of errors occur on a statement within a
+        // > multi-statement transaction (errors including SQLITE_FULL,
+        // > SQLITE_IOERR, SQLITE_NOMEM, SQLITE_BUSY, and SQLITE_INTERRUPT) then
+        // > the transaction might be rolled back automatically. The only way to
+        // > find out whether SQLite automatically rolled back the transaction
+        // > after an error is to use this function.
+        //
+        // The second technique is more robust, because we don't have to guess
+        // which rollback errors should be ignored, and which rollback errors
+        // should be exposed to the library user.
+        if sqlite3_get_autocommit(sqliteConnection) == 0 {
             try execute("ROLLBACK TRANSACTION")
-        } catch {
-            // https://www.sqlite.org/lang_transaction.html#immediate
-            //
-            // > Response To Errors Within A Transaction
-            // >
-            // > If certain kinds of errors occur within a transaction, the
-            // > transaction may or may not be rolled back automatically.
-            // > The errors that can cause an automatic rollback include:
-            // >
-            // > - SQLITE_FULL: database or disk full
-            // > - SQLITE_IOERR: disk I/O error
-            // > - SQLITE_BUSY: database in use by another process
-            // > - SQLITE_NOMEM: out or memory
-            // >
-            // > [...] It is recommended that applications respond to the
-            // > errors listed above by explicitly issuing a ROLLBACK
-            // > command. If the transaction has already been rolled back
-            // > automatically by the error response, then the ROLLBACK
-            // > command will fail with an error, but no harm is caused
-            // > by this.
-            //
-            // TODO: test that isInsideTransaction, savepointStack, transaction
-            // observers, etc. are in good shape when such an implicit rollback
-            // happens.
-            guard let underlyingError = underlyingError as? DatabaseError, [.SQLITE_FULL, .SQLITE_IOERR, .SQLITE_BUSY, .SQLITE_NOMEM].contains(underlyingError.resultCode) else {
-                throw error
-            }
         }
     }
     
@@ -1672,13 +1868,13 @@ extension Database {
     /// Add a transaction observer, so that it gets notified of
     /// database changes.
     ///
-    /// The transaction observer is weakly referenced: it is not retained, and
-    /// stops getting notifications after it is deallocated.
-    ///
     /// - parameter transactionObserver: A transaction observer.
-    public func add(transactionObserver: TransactionObserver) {
+    /// - parameter extent: The duration of the observation. The default is
+    ///   the observer lifetime (observation lasts until observer
+    ///   is deallocated).
+    public func add(transactionObserver: TransactionObserver, extent: TransactionObservationExtent = .observerLifetime) {
         SchedulingWatchdog.preconditionValidQueue(self)
-        transactionObservers.append(WeakTransationObserver(observer: transactionObserver))
+        transactionObservers.append(ManagedTransactionObserver(observer: transactionObserver, extent: extent))
         if transactionObservers.count == 1 {
             installUpdateHook()
         }
@@ -1687,16 +1883,57 @@ extension Database {
     /// Remove a transaction observer.
     public func remove(transactionObserver: TransactionObserver) {
         SchedulingWatchdog.preconditionValidQueue(self)
-        transactionObservers.removeFirst { $0.observer === transactionObserver }
+        transactionObservers.removeFirst { $0.isWrapping(transactionObserver) }
         if transactionObservers.isEmpty {
             uninstallUpdateHook()
         }
     }
     
-    /// Clears references to deallocated observers, and uninstall SQLite update
-    /// hooks if there is no remaining observers.
+    /// Registers a closure to be executed after the next or current
+    /// transaction completion.
+    ///
+    ///     dbQueue.inTransaction { db in
+    ///         db.afterNextTransactionCommit { _ in
+    ///             print("commit did succeed")
+    ///         }
+    ///         ...
+    ///         return .commit // prints "commit did succeed"
+    ///     }
+    ///
+    /// If the transaction is rollbacked, the closure is not executed.
+    ///
+    /// If the transaction is committed, the closure is executed in a protected
+    /// dispatch queue, serialized will all database updates.
+    public func afterNextTransactionCommit(_ closure: @escaping (Database) -> ()) {
+        class CommitHandler : TransactionObserver {
+            let closure: (Database) -> ()
+            
+            init(_ closure: @escaping (Database) -> ()) {
+                self.closure = closure
+            }
+            
+            // Ignore individual changes and transaction rollbacks
+            func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool { return false }
+            #if SQLITE_ENABLE_PREUPDATE_HOOK
+            func databaseWillChange(with event: DatabasePreUpdateEvent) { }
+            #endif
+            func databaseDidChange(with event: DatabaseEvent) { }
+            func databaseWillCommit() throws { }
+            func databaseDidRollback(_ db: Database) { }
+            
+            // On commit, run closure
+            func databaseDidCommit(_ db: Database) {
+                closure(db)
+            }
+        }
+        
+        add(transactionObserver: CommitHandler(closure), extent: .nextTransaction)
+    }
+    
+    /// Remove transaction observers that have stopped observing transaction,
+    /// and uninstall SQLite update hooks if there is no remaining observers.
     private func cleanupTransactionObservers() {
-        transactionObservers = transactionObservers.filter { $0.observer != nil }
+        transactionObservers = transactionObservers.filter { $0.isObserving }
         if transactionObservers.isEmpty {
             uninstallUpdateHook()
         }
@@ -1710,17 +1947,17 @@ extension Database {
     ///
     /// An INSERT statement will pass, but not DROP TABLE (which invalidates the
     /// database cache), or RELEASE SAVEPOINT (which alters the savepoint stack)
-    static func preconditionValidSelectStatement(sql: String, observer: StatementCompilationObserver) {
-        GRDBPrecondition(observer.invalidatesDatabaseSchemaCache == false, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
-        GRDBPrecondition(observer.transactionStatementInfo == nil, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
+    static func preconditionValidSelectStatement(sql: String, authorizer: StatementCompilationAuthorizer) {
+        GRDBPrecondition(authorizer.invalidatesDatabaseSchemaCache == false, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
+        GRDBPrecondition(authorizer.transactionStatementInfo == nil, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
         
-        // Don't check for observer.databaseEventKinds.isEmpty
+        // Don't check for authorizer.databaseEventKinds.isEmpty
         //
-        // When observer.databaseEventKinds.isEmpty is NOT empty, this means
+        // When authorizer.databaseEventKinds.isEmpty is NOT empty, this means
         // that the database is changed by the statement.
         //
         // It thus looks like the statement should be performed by an
-        // UpdateStatement, not a SelectStatement: transaction observers are not
+        // UpdateStatement, not a SelectStatement: transaction authorizers are not
         // notified of database changes when they are executed by
         // a SelectStatement.
         //
@@ -1734,14 +1971,15 @@ extension Database {
         // himself: just give up, and allow SelectStatement to execute database
         // changes. We'll cope with eventual troubles later, when they occur.
         //
-        // GRDBPrecondition(observer.databaseEventKinds.isEmpty, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
+        // GRDBPrecondition(authorizer.databaseEventKinds.isEmpty, "Invalid statement type for query \(String(reflecting: sql)): use UpdateStatement instead.")
     }
     
     func updateStatementWillExecute(_ statement: UpdateStatement) {
+        // Grab the transaction observers that are interested in the actions
+        // performed by the statement.
         let databaseEventKinds = statement.databaseEventKinds
         activeTransactionObservers = transactionObservers.filter { observer in
-            guard let observer = observer.observer else { return true }
-            return databaseEventKinds.index(where: observer.observes) != nil
+            return databaseEventKinds.contains(where: observer.observes)
         }
     }
     
@@ -1751,9 +1989,8 @@ extension Database {
         // https://www.sqlite.org/c3ref/reset.html
         //
         // So make sure we clear this statement from the cache.
-        if let index = selectStatementCache.index(where: { $0.1 === statement }) {
-            selectStatementCache.remove(at: index)
-        }
+        grdbStatementCache.remove(statement)
+        userStatementCache.remove(statement)
     }
     
     /// Some failed statements interest transaction observers.
@@ -1771,9 +2008,8 @@ extension Database {
         // https://www.sqlite.org/c3ref/reset.html
         //
         // So make sure we clear this statement from the cache.
-        if let index = updateStatementCache.index(where: { $0.1 === statement }) {
-            updateStatementCache.remove(at: index)
-        }
+        grdbStatementCache.remove(statement)
+        userStatementCache.remove(statement)
         
         switch transactionHookState {
         case .rollback:
@@ -1804,7 +2040,7 @@ extension Database {
             case .transaction(action: let action):
                 switch action {
                 case .begin:
-                    isInsideExplicitTransaction = true
+                    break
                 case .commit:
                     if case .pending = self.transactionHookState {
                         // A COMMIT statement has ended a deferred transaction
@@ -1829,9 +2065,7 @@ extension Database {
                         savepointStack.clear()
                         for (event, observers) in eventsBuffer {
                             for observer in observers {
-                                if let observer = observer.observer {
-                                    event.send(to: observer)
-                                }
+                                event.send(to: observer)
                             }
                         }
                     }
@@ -1856,36 +2090,28 @@ extension Database {
         }
     }
     
-    /// Transaction hook
+    /// See sqlite3_commit_hook
     func willCommit() throws {
         let eventsBuffer = savepointStack.eventsBuffer
         savepointStack.clear()
-        
-        var observersForCommit: [TransactionObserver] = transactionObservers.flatMap({ $0.observer })
+
         for (event, observers) in eventsBuffer {
             for observer in observers {
-                if let observer = observer.observer {
-                    event.send(to: observer)
-                    if !observersForCommit.contains(where: { $0 === observer }) {
-                        observersForCommit.append(observer)
-                    }
-                }
+                event.send(to: observer)
             }
         }
-        for observer in observersForCommit {
+        for observer in transactionObservers {
             try observer.databaseWillCommit()
         }
     }
     
 #if SQLITE_ENABLE_PREUPDATE_HOOK
-    /// Transaction hook
+    /// See sqlite3_preupdate_hook
     private func willChange(with event: DatabasePreUpdateEvent) {
         if savepointStack.isEmpty {
-            // Don't notify all transactionObservers about the database event.
-            // Only notify those that are interested in the event, and have been
-            // isolated in updateStatementWillExecute().
+            // Notify all interested transactionObservers.
             for observer in activeTransactionObservers {
-                observer.observer?.databaseWillChange(with: event)
+                observer.databaseWillChange(with: event)
             }
         } else {
             // Buffer both event and the observers that should be notified of the event.
@@ -1894,14 +2120,12 @@ extension Database {
     }
 #endif
     
-    /// Transaction hook
+    /// See sqlite3_update_hook
     private func didChange(with event: DatabaseEvent) {
         if savepointStack.isEmpty {
-            // Don't notify all transactionObservers about the database event.
-            // Only notify those that are interested in the event, and have been
-            // isolated in updateStatementWillExecute().
+            // Notify all interested transactionObservers.
             for observer in activeTransactionObservers {
-                observer.observer?.databaseDidChange(with: event)
+                observer.databaseDidChange(with: event)
             }
         } else {
             // Buffer both event and the observers that should be notified of the event.
@@ -1909,34 +2133,30 @@ extension Database {
         }
     }
     
-    /// Transaction hook
     private func didCommit() {
-        isInsideExplicitTransaction = false
         savepointStack.clear()
         
         for observer in transactionObservers {
-            observer.observer?.databaseDidCommit(self)
+            observer.databaseDidCommit(self)
         }
         cleanupTransactionObservers()
     }
     
-    /// Transaction hook
     private func didRollback(notifyTransactionObservers: Bool) {
-        isInsideExplicitTransaction = false
         savepointStack.clear()
         
         if notifyTransactionObservers {
             for observer in transactionObservers {
-                observer.observer?.databaseDidRollback(self)
+                observer.databaseDidRollback(self)
             }
         }
         cleanupTransactionObservers()
     }
     
     private func installUpdateHook() {
-        let dbPointer = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
+        let dbPointer = Unmanaged.passUnretained(self).toOpaque()
         sqlite3_update_hook(sqliteConnection, { (dbPointer, updateKind, databaseNameCString, tableNameCString, rowID) in
-            let db = unsafeBitCast(dbPointer, to: Database.self)
+            let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
             db.didChange(with: DatabaseEvent(
                 kind: DatabaseEvent.Kind(rawValue: updateKind)!,
                 rowID: rowID,
@@ -1946,7 +2166,7 @@ extension Database {
         
         #if SQLITE_ENABLE_PREUPDATE_HOOK
             sqlite3_preupdate_hook(sqliteConnection, { (dbPointer, databaseConnection, updateKind, databaseNameCString, tableNameCString, initialRowID, finalRowID) in
-                let db = unsafeBitCast(dbPointer, to: Database.self)
+                let db = Unmanaged<Database>.fromOpaque(dbPointer!).takeUnretainedValue()
                 db.willChange(with: DatabasePreUpdateEvent(
                     connection: databaseConnection!,
                     kind: DatabasePreUpdateEvent.Kind(rawValue: updateKind)!,
@@ -2047,13 +2267,77 @@ public protocol TransactionObserver : class {
     #endif
 }
 
-/// Database stores WeakTransationObserver so that it does not retain its
-/// transaction observers.
-fileprivate final class WeakTransationObserver {
-    weak var observer: TransactionObserver?
-    init(observer: TransactionObserver) {
-        self.observer = observer
+/// This class manages the observation extent of a transaction observer
+private final class ManagedTransactionObserver : TransactionObserver {
+    let extent: Database.TransactionObservationExtent
+    private weak var weakObserver: TransactionObserver?
+    private var strongObserver: TransactionObserver?
+    private var observer: TransactionObserver? { return strongObserver ?? weakObserver }
+    
+    fileprivate var isObserving: Bool {
+        return observer != nil
     }
+    
+    init(observer: TransactionObserver, extent: Database.TransactionObservationExtent) {
+        self.extent = extent
+        switch extent {
+        case .observerLifetime:
+            weakObserver = observer
+        case .nextTransaction:
+            // This strong reference will be released in databaseDidCommit() and databaseDidRollback()
+            strongObserver = observer
+        case .databaseLifetime:
+            strongObserver = observer
+        }
+    }
+    
+    func isWrapping(_ observer: TransactionObserver) -> Bool {
+        return self.observer === observer
+    }
+    
+    func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool {
+        return observer?.observes(eventsOfKind: eventKind) ?? false
+    }
+    
+    func databaseDidChange(with event: DatabaseEvent) {
+        observer?.databaseDidChange(with: event)
+    }
+    
+    func databaseWillCommit() throws {
+        try observer?.databaseWillCommit()
+    }
+    
+    func databaseDidCommit(_ db: Database) {
+        switch extent {
+        case .observerLifetime, .databaseLifetime:
+            observer?.databaseDidCommit(db)
+        case .nextTransaction:
+            if let observer = self.observer {
+                // make sure observer is no longer notified
+                strongObserver = nil
+                observer.databaseDidCommit(db)
+            }
+        }
+    }
+    
+    func databaseDidRollback(_ db: Database) {
+        switch extent {
+        case .observerLifetime, .databaseLifetime:
+            observer?.databaseDidRollback(db)
+        case .nextTransaction:
+            if let observer = self.observer {
+                // make sure observer is no longer notified
+                strongObserver = nil
+                observer.databaseDidRollback(db)
+            }
+        }
+    }
+    
+    #if SQLITE_ENABLE_PREUPDATE_HOOK
+    func databaseWillChange(with event: DatabasePreUpdateEvent) {
+        observer?.databaseWillChange(with: event)
+    }
+    #endif
 }
 
 /// A kind of database event. See Database.add(transactionObserver:)
@@ -2070,13 +2354,7 @@ public enum DatabaseEventKind {
     
     /// Returns whether event has any impact on tables and columns described
     /// by selectionInfo.
-    ///
-    /// If the result is nil, then the information is unknown.
-    public func impacts(_ selectionInfo: SelectStatement.SelectionInfo) -> Bool? {
-        if selectionInfo.isUnknown {
-            return nil
-        }
-        
+    public func impacts(_ selectionInfo: SelectStatement.SelectionInfo) -> Bool {
         switch self {
         case .delete(let tableName):
             return selectionInfo.contains(anyColumnFrom: tableName)
@@ -2449,7 +2727,7 @@ private struct CopiedDatabaseEventImpl : DatabaseEventImpl {
 ///   rollbacked.
 class SavepointStack {
     /// The buffered events. See Database.didChange(with:)
-    fileprivate var eventsBuffer: [(event: DatabaseEventProtocol, observers: [WeakTransationObserver])] = []
+    fileprivate var eventsBuffer: [(event: DatabaseEventProtocol, observers: [TransactionObserver])] = []
     
     /// The savepoint stack, as an array of tuples (savepointName, index in the eventsBuffer array).
     /// Indexes let us drop rollbacked events from the event buffer.

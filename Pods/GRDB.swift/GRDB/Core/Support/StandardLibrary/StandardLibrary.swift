@@ -1,5 +1,7 @@
 #if SWIFT_PACKAGE
     import CSQLite
+#elseif !GRDBCUSTOMSQLITE && !GRDBCIPHER
+    import SQLite3
 #endif
 
 // MARK: - Value Types
@@ -21,8 +23,8 @@ extension Bool: DatabaseValueConvertible, StatementColumnConvertible {
         return (self ? 1 : 0).databaseValue
     }
     
-    /// Returns a Bool initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Bool? {
+    /// Returns a Bool initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Bool? {
         // IMPLEMENTATION NOTE
         //
         // https://www.sqlite.org/lang_expr.html#booleanexpr
@@ -79,7 +81,7 @@ extension Bool: DatabaseValueConvertible, StatementColumnConvertible {
         // the natural boolean storage class, and Real because Numeric affinity
         // store big numbers as Real.
         
-        switch databaseValue.storage {
+        switch dbValue.storage {
         case .int64(let int64):
             return (int64 != 0)
         case .double(let double):
@@ -112,18 +114,65 @@ extension Int: DatabaseValueConvertible, StatementColumnConvertible {
         return Int64(self).databaseValue
     }
     
-    /// Returns an Int initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Int? {
-        switch databaseValue.storage {
-        case .int64(let int64):
-            return Int(exactly: int64)
-        case .double(let double):
-            guard double >= Double(Int64.min) else { return nil }
-            guard double < Double(Int64.max) else { return nil }
-            return Int(exactly: Int64(double))
-        default:
-            return nil
+    /// Returns an Int initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Int? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { Int(exactly: $0) }
+    }
+}
+
+/// Int8 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension Int8: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = Int8(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to Int8")
         }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an Int8 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Int8? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { Int8(exactly: $0) }
+    }
+}
+
+/// Int16 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension Int16: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = Int16(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to Int16")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an Int16 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Int16? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { Int16(exactly: $0) }
     }
 }
 
@@ -149,18 +198,9 @@ extension Int32: DatabaseValueConvertible, StatementColumnConvertible {
         return Int64(self).databaseValue
     }
     
-    /// Returns an Int32 initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Int32? {
-        switch databaseValue.storage {
-        case .int64(let int64):
-            return Int32(exactly: int64)
-        case .double(let double):
-            guard double >= Double(Int64.min) else { return nil }
-            guard double < Double(Int64.max) else { return nil }
-            return Int32(exactly: Int64(double))
-        default:
-            return nil
-        }
+    /// Returns an Int32 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Int32? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { Int32(exactly: $0) }
     }
 }
 
@@ -181,9 +221,9 @@ extension Int64: DatabaseValueConvertible, StatementColumnConvertible {
         return DatabaseValue(storage: .int64(self))
     }
     
-    /// Returns an Int64 initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Int64? {
-        switch databaseValue.storage {
+    /// Returns an Int64 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Int64? {
+        switch dbValue.storage {
         case .int64(let int64):
             return int64
         case .double(let double):
@@ -193,6 +233,146 @@ extension Int64: DatabaseValueConvertible, StatementColumnConvertible {
         default:
             return nil
         }
+    }
+}
+
+/// UInt adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension UInt: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = UInt(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to UInt")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an Int initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> UInt? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { UInt(exactly: $0) }
+    }
+}
+
+/// UInt8 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension UInt8: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = UInt8(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to UInt8")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an UInt8 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> UInt8? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { UInt8(exactly: $0) }
+    }
+}
+
+/// UInt16 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension UInt16: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = UInt16(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to UInt16")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an UInt16 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> UInt16? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { UInt16(exactly: $0) }
+    }
+}
+
+/// UInt32 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension UInt32: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = UInt32(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to UInt32")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an UInt32 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> UInt32? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { UInt32(exactly: $0) }
+    }
+}
+
+/// UInt64 adopts DatabaseValueConvertible and StatementColumnConvertible.
+extension UInt64: DatabaseValueConvertible, StatementColumnConvertible {
+    
+    /// Returns a value initialized from a raw SQLite statement pointer.
+    ///
+    /// - parameters:
+    ///     - sqliteStatement: A pointer to an SQLite statement.
+    ///     - index: The column index.
+    public init(sqliteStatement: SQLiteStatement, index: Int32) {
+        let int64 = sqlite3_column_int64(sqliteStatement, index)
+        if let v = UInt64(exactly: int64) {
+            self = v
+        } else {
+            fatalError("could not convert database value \(int64) to UInt64")
+        }
+    }
+    
+    /// Returns a value that can be stored in the database.
+    public var databaseValue: DatabaseValue {
+        return Int64(self).databaseValue
+    }
+    
+    /// Returns an UInt64 initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> UInt64? {
+        return Int64.fromDatabaseValue(dbValue).flatMap { UInt64(exactly: $0) }
     }
 }
 
@@ -213,9 +393,9 @@ extension Double: DatabaseValueConvertible, StatementColumnConvertible {
         return DatabaseValue(storage: .double(self))
     }
     
-    /// Returns a Double initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Double? {
-        switch databaseValue.storage {
+    /// Returns a Double initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Double? {
+        switch dbValue.storage {
         case .int64(let int64):
             return Double(int64)
         case .double(let double):
@@ -243,9 +423,9 @@ extension Float: DatabaseValueConvertible, StatementColumnConvertible {
         return Double(self).databaseValue
     }
     
-    /// Returns a Float initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Float? {
-        switch databaseValue.storage {
+    /// Returns a Float initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Float? {
+        switch dbValue.storage {
         case .int64(let int64):
             return Float(int64)
         case .double(let double):
@@ -273,9 +453,9 @@ extension String: DatabaseValueConvertible, StatementColumnConvertible {
         return DatabaseValue(storage: .string(self))
     }
     
-    /// Returns a String initialized from *databaseValue*, if possible.
-    public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> String? {
-        switch databaseValue.storage {
+    /// Returns a String initialized from *dbValue*, if possible.
+    public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> String? {
+        switch dbValue.storage {
         case .string(let string):
             return string
         default:
@@ -298,10 +478,10 @@ extension DatabaseFunction {
     /// capitalized:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.capitalized)
+    ///     let request = Player.select(nameColumn.capitalized)
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
-    public static let capitalize = DatabaseFunction("swiftCapitalizedString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let capitalize = DatabaseFunction("swiftCapitalizedString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.capitalized
@@ -317,10 +497,10 @@ extension DatabaseFunction {
     /// lowercased:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.lowercased())
+    ///     let request = Player.select(nameColumn.lowercased())
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
-    public static let lowercase = DatabaseFunction("swiftLowercaseString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let lowercase = DatabaseFunction("swiftLowercaseString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.lowercased()
@@ -336,10 +516,10 @@ extension DatabaseFunction {
     /// uppercased:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.uppercased())
+    ///     let request = Player.select(nameColumn.uppercased())
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
-    public static let uppercase = DatabaseFunction("swiftUppercaseString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let uppercase = DatabaseFunction("swiftUppercaseString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.uppercased()
@@ -357,11 +537,11 @@ extension DatabaseFunction {
     /// localizedCapitalized:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.localizedCapitalized)
+    ///     let request = Player.select(nameColumn.localizedCapitalized)
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
     @available(iOS 9.0, OSX 10.11, watchOS 3.0, *)
-    public static let localizedCapitalize = DatabaseFunction("swiftLocalizedCapitalizedString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let localizedCapitalize = DatabaseFunction("swiftLocalizedCapitalizedString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.localizedCapitalized
@@ -377,11 +557,11 @@ extension DatabaseFunction {
     /// localizedLowercased:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.localizedLowercased)
+    ///     let request = Player.select(nameColumn.localizedLowercased)
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
     @available(iOS 9.0, OSX 10.11, watchOS 3.0, *)
-    public static let localizedLowercase = DatabaseFunction("swiftLocalizedLowercaseString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let localizedLowercase = DatabaseFunction("swiftLocalizedLowercaseString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.localizedLowercase
@@ -397,11 +577,11 @@ extension DatabaseFunction {
     /// localizedUppercased:
     ///
     ///     let nameColumn = Column("name")
-    ///     let request = Person.select(nameColumn.localizedUppercased)
+    ///     let request = Player.select(nameColumn.localizedUppercased)
     ///     let names = try String.fetchAll(dbQueue, request)   // [String]
     @available(iOS 9.0, OSX 10.11, watchOS 3.0, *)
-    public static let localizedUppercase = DatabaseFunction("swiftLocalizedUppercaseString", argumentCount: 1, pure: true) { databaseValues in
-        guard let string = String.fromDatabaseValue(databaseValues[0]) else {
+    public static let localizedUppercase = DatabaseFunction("swiftLocalizedUppercaseString", argumentCount: 1, pure: true) { dbValues in
+        guard let string = String.fromDatabaseValue(dbValues[0]) else {
             return nil
         }
         return string.localizedUppercase
@@ -433,7 +613,7 @@ extension DatabaseCollation {
     ///
     ///     let collationName = DatabaseCollation.caseInsensitiveCompare.name
     ///     dbQueue.execute(
-    ///         "CREATE TABLE persons (" +
+    ///         "CREATE TABLE players (" +
     ///             "name TEXT COLLATE \(collationName)" +
     ///         ")"
     ///     )
@@ -451,7 +631,7 @@ extension DatabaseCollation {
     ///
     ///     let collationName = DatabaseCollation.caseInsensitiveCompare.name
     ///     dbQueue.execute(
-    ///         "CREATE TABLE persons (" +
+    ///         "CREATE TABLE players (" +
     ///             "name TEXT COLLATE \(collationName)" +
     ///         ")"
     ///     )
@@ -469,7 +649,7 @@ extension DatabaseCollation {
     ///
     ///     let collationName = DatabaseCollation.localizedCaseInsensitiveCompare.name
     ///     dbQueue.execute(
-    ///         "CREATE TABLE persons (" +
+    ///         "CREATE TABLE players (" +
     ///             "name TEXT COLLATE \(collationName)" +
     ///         ")"
     ///     )
@@ -487,7 +667,7 @@ extension DatabaseCollation {
     ///
     ///     let collationName = DatabaseCollation.localizedCompare.name
     ///     dbQueue.execute(
-    ///         "CREATE TABLE persons (" +
+    ///         "CREATE TABLE players (" +
     ///             "name TEXT COLLATE \(collationName)" +
     ///         ")"
     ///     )
@@ -505,7 +685,7 @@ extension DatabaseCollation {
     ///
     ///     let collationName = DatabaseCollation.localizedStandardCompare.name
     ///     dbQueue.execute(
-    ///         "CREATE TABLE persons (" +
+    ///         "CREATE TABLE players (" +
     ///             "name TEXT COLLATE \(collationName)" +
     ///         ")"
     ///     )
