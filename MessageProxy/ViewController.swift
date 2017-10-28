@@ -42,7 +42,7 @@ class ViewController: NSViewController {
             self.setupWebserver()
             
             let messagesDatabaseLocation = (NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath as String) //Automatically expand our path so we don't have to find the users home directory
-            do {let connector = try FirebaseDatabaseConnector(datebaseLocation: messagesDatabaseLocation);} catch {}
+            //do {let connector = try FirebaseDatabaseConnector(datebaseLocation: messagesDatabaseLocation);} catch {}
             
             
 		}else {
