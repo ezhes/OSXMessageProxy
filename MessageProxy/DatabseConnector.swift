@@ -173,10 +173,18 @@ class DatabaseConstructor: NSObject {
                 messageDictionaryRepresentation.setValue(contactsDatabase?[contactName!], forKey: "human_name")
                 messageDictionaryRepresentation.setValue(contactName, forKey: "sender") //lookup our handle into a useful contact lookup name
             }
+        
+            //Newer versions of OSX (> High Sierra) have this core data dates very very long. This causes incredible problem and we get overflows in clients. Overall not good.
+            if #available(OSX 10.13, *) {
+                messageDictionaryRepresentation.setValue(message[ "date"]/1000000000, forKey: "date")
+                messageDictionaryRepresentation.setValue(message[ "date_read"]/1000000000, forKey: "date_read")
+                messageDictionaryRepresentation.setValue(message[ "date_delivered"]/1000000000, forKey: "date_delivered")
+            } else {
+                messageDictionaryRepresentation.setValue(message[ "date"], forKey: "date")
+                messageDictionaryRepresentation.setValue(message[ "date_read"], forKey: "date_read")
+                messageDictionaryRepresentation.setValue(message[ "date_delivered"], forKey: "date_delivered")
+            }
             messageDictionaryRepresentation.setValue(message[ "error"], forKey: "error")
-            messageDictionaryRepresentation.setValue(message[ "date"], forKey: "date")
-            messageDictionaryRepresentation.setValue(message[ "date_read"], forKey: "date_read")
-            messageDictionaryRepresentation.setValue(message[ "date_delivered"], forKey: "date_delivered")
             messageDictionaryRepresentation.setValue(message[ "is_from_me"], forKey: "is_from_me")
             messageDictionaryRepresentation.setValue(message[ "chat_id"], forKey: "chat_id")
             messageDictionaryRepresentation.setValue(message[ "is_sent"], forKey: "is_sent")
