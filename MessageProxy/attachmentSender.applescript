@@ -9,6 +9,7 @@ on run {msgText, targetPhoneNum, fileUrl}
         set targetFile to POSIX file fileUrl as string
         # Open and select the target file in finder
         reveal targetFile
+        delay 0.5
         # Get the name of the target file
         set sel to get the selection
         set target_file_name to the name of (item 1 of sel)
