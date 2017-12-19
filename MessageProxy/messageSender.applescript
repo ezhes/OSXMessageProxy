@@ -1,3 +1,4 @@
+#This shit needs accessibility access to worl properly, give terminal this access
 on run {msgText, targetPhoneNum, usingUIAutomation}
     tell application "Messages"
         activate

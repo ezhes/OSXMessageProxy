@@ -468,6 +468,109 @@ class DatabaseConstructor: NSObject {
         }
     }
     
+    /// Send an attachmetnt using the Messages.app on the server machine
+    ///
+    /// - Parameters:
+    ///   - toRecipients: A human or phone number list of comma seperated phone numbers/emails/group nam to send to
+    ///   - participiantListIsCustom: If the participiant list is custom built by us (i.e. to make human readable) it is not a raw participiant list. This being false denotes that the chat has been named in the database, not by us
+    /// The message to send, this is forced to an constant string so that the end users don't get text with their image but we can still check if it has been sent
+    func sendAttachment(toRecipients:String,fileUrl:URL) {
+        
+        //Create our queue-able message
+        let newMessage = SendableMessage()
+        //Because we send this with the image, it actually shows up as out last sent message, indicating that we sent a message, this could be converted to something less annoying should the reciepents complain
+        newMessage.messageContents = "Image Sent".trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) //we need to trim trailing white space/new lines otherwise the comparator fails and we flood the with messages. The iMessage client filters it out when we send it in so we HAVE to do this
+        newMessage.recipients = toRecipients;
+        
+        //..and send it. This is the user friendly way and we need to make a packet to send it
+        sendAttachment(message:newMessage, fileUrl:fileUrl.path)
+        
+    }
+    
+    /// Send a message object safely. This is safe to use for resending messages
+    ///
+    /// - Parameter usingUIAutomation: If UI automation should be used to send the message. UI automation MUST be used if the message is a group chat.
+    /// - Parameter message: The SendableMessage to send
+    /// - Parameter fileUrl: The path to the image file to send
+    func sendAttachment(message: SendableMessage, fileUrl:String) {
+        messageQueue.append(message)
+        DispatchQueue.global().async {
+            [unowned self ] in
+            //Really shitty way to do this. I don't want to learn how to do block queueing and so we're just going to make threads for each message. fuck em if they send too fast.
+            //We are waiting until the first queue object is equal to our goal
+            while (self.messageQueue.first?.messageContents != message.messageContents) {
+                Thread.sleep(forTimeInterval: 1)
+            }
+            print("[Message Send] Message \(self.messageQueue[0].messageContents!) has reached the front of the queue")
+            //We're last in queue. We should also be safe in terms of thread safety
+            //Send our message
+            let task = Process()
+            task.launchPath = "/usr/bin/osascript"
+            //Set up the arguments!
+            task.arguments = [Bundle.main.path(forResource: "attachmentSender", ofType: "scpt")!,self.messageQueue[0].messageContents!,self.messageQueue[0].recipients!,fileUrl]
+            task.launch()
+            //Wait a bit before we check that it's been sent so that our message bundle is most accurate
+            sleep(20)
+            var messageHasBeenSent = false
+            var messageRowIfSent:Row?
+            //We'll check 5 times that our message has sent
+            for _ in 0...12 {
+                do {
+                    let _ = try self.databaseQueue?.inDatabase { db -> [Row]? in
+                        let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id LEFT JOIN message_attachment_join on message_attachment_join.message_id = chat_message_join.message_id LEFT JOIN attachment on attachment.ROWID = message_attachment_join.attachment_id where (message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\")  ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent. We're also pulling a huge amount of data here because if we did send we want to have a full valid message context
+                        rows.forEach({
+                            message in
+                            //Check if we're in our sent messages
+                            if (message[ "text"] == self.messageQueue[0].messageContents!) {
+                                //Yes, flag as done
+                                messageHasBeenSent = true
+                                messageRowIfSent = message
+                            }
+                        })
+                        return rows
+                    }
+                    
+                } catch  {
+                    print("!!!! -> FAILED TO CHCK FOR MESSAGES")
+                }
+                //Break early if we've sent
+                if (messageHasBeenSent) {
+                    break
+                }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            if (messageHasBeenSent) {
+                //We've been sent.
+                //Let the socket users know that some message with the following text was sent???
+                let swiftyMessage = self.convertMessageToDictionary(message: messageRowIfSent!, handleTable: [:])
+                self.socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"messageSent\", \"content\": \(self.convertMessageArrayToJSON(array: [swiftyMessage]))}")
+                self.messageQueue.remove(at: 0)
+                print(self.messageQueue)
+                print("[Message Send] Our message has been sent, dequeing")
+                
+            }else {
+                //Message failed to send after 13 seconds.
+                self.messageQueue[0].sendFailures+=1;
+                if (self.messageQueue[0].sendFailures >= 3) {
+                    //We've failed too many times, notify that the message didn't send
+                    DispatchQueue.main.async {
+                        self.sendNotification(title: "Failed to send message", contents: self.messageQueue[0].messageContents!, appURL: self.messageQueue[0].recipients!)
+                    }
+                    let jsonSafeMessageString = self.messageQueue[0].messageContents?.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
+                    self.socketServer?.sendSocketBroadcast(jsonMessage: "{\"type\" : \"messageSendFailure\", \"content\": \"\(jsonSafeMessageString ?? "")\"}")
+                    
+                    print("[Message Send] Permentally failed to send message. Notifying. Dequeded message")
+                    self.messageQueue.remove(at: 0)
+                    print(self.messageQueue)
+                }else {
+                    print("[Message Send] Message send failed. Trying \(self.messageQueue[0].sendFailures)/3")
+                    self.messageQueue.remove(at: 0) //we need to remove here since when we recall we actually add another in the queue so ???
+                    //Recursively retry. We have to call this one instead because if we re create we lose .sendFailures
+                    self.sendAttachment(message: message, fileUrl:fileUrl)
+                }
+            }
+        }
+    }
     
     /// Send a push notification to the device
     ///

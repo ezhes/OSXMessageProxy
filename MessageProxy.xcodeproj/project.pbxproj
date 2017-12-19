@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DFF7BC61FDB395500A1218E /* attachmentSender.applescript in Sources */ = {isa = PBXBuildFile; fileRef = 0DFF7BC51FDB395500A1218E /* attachmentSender.applescript */; };
 		221596AE1EBD9B260005A670 /* SocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221596AD1EBD9B260005A670 /* SocketServer.swift */; };
 		221C33BB1F9B163900ED963C /* FirebaseDatabaseConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221C33BA1F9B163900ED963C /* FirebaseDatabaseConnector.swift */; };
 		221FC8491F9AFD8B00732D96 /* FirebaseConnector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221FC8481F9AFD8B00732D96 /* FirebaseConnector.swift */; };
@@ -22,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0DFF7BC51FDB395500A1218E /* attachmentSender.applescript */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.applescript; path = attachmentSender.applescript; sourceTree = "<group>"; };
 		221596AD1EBD9B260005A670 /* SocketServer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SocketServer.swift; sourceTree = "<group>"; };
 		221C33BA1F9B163900ED963C /* FirebaseDatabaseConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseDatabaseConnector.swift; sourceTree = "<group>"; };
 		221FC8481F9AFD8B00732D96 /* FirebaseConnector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseConnector.swift; sourceTree = "<group>"; };
@@ -78,6 +80,7 @@
 				22FF3D0D1E67A45B00F2E70C /* Info.plist */,
 				22FF3D151E6A912100F2E70C /* MessageProxy.entitlements */,
 				222AB4391E6A526C00700B13 /* messageSender.applescript */,
+				0DFF7BC51FDB395500A1218E /* attachmentSender.applescript */,
 				22FF3D041E67A45B00F2E70C /* AppDelegate.swift */,
 				22FF3D061E67A45B00F2E70C /* ViewController.swift */,
 				22FF3D131E67C4FA00F2E70C /* DatabseConnector.swift */,
@@ -144,7 +147,7 @@
 				TargetAttributes = {
 					22FF3D001E67A45B00F2E70C = {
 						CreatedOnToolsVersion = 8.2.1;
-						DevelopmentTeam = XBKLZPN8YT;
+						DevelopmentTeam = Z649GLYTDX;
 						LastSwiftMigration = 0830;
 						ProvisioningStyle = Automatic;
 						SystemCapabilities = {
@@ -264,6 +267,7 @@
 				222AB43A1E6A526C00700B13 /* messageSender.applescript in Sources */,
 				221596AE1EBD9B260005A670 /* SocketServer.swift in Sources */,
 				22FF3D141E67C4FA00F2E70C /* DatabseConnector.swift in Sources */,
+				0DFF7BC61FDB395500A1218E /* attachmentSender.applescript in Sources */,
 				22FF3D071E67A45B00F2E70C /* ViewController.swift in Sources */,
 				221FC8491F9AFD8B00732D96 /* FirebaseConnector.swift in Sources */,
 				221C33BB1F9B163900ED963C /* FirebaseDatabaseConnector.swift in Sources */,
@@ -385,7 +389,7 @@
 				CODE_SIGN_ENTITLEMENTS = MessageProxy/MessageProxy.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XBKLZPN8YT;
+				DEVELOPMENT_TEAM = Z649GLYTDX;
 				INFOPLIST_FILE = MessageProxy/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
@@ -407,7 +411,7 @@
 				CODE_SIGN_ENTITLEMENTS = MessageProxy/MessageProxy.entitlements;
 				CODE_SIGN_IDENTITY = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = XBKLZPN8YT;
+				DEVELOPMENT_TEAM = Z649GLYTDX;
 				INFOPLIST_FILE = MessageProxy/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.11;

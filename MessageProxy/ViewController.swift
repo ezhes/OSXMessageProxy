@@ -221,6 +221,46 @@ class ViewController: NSViewController {
                 return GCDWebServerDataResponse(html:"Invalid post data!")
             })
             
+            apiServer?.addHandler(forMethod: "POST", path: "/sendAttachment", request: GCDWebServerURLEncodedFormRequest.self, processBlock: {
+                request in
+                weak var weakConnector = connector;
+                weak var weakSelf = self
+                //Grab our post data parser as a form
+                let formRequest = request as! GCDWebServerURLEncodedFormRequest
+                
+                if (formRequest.arguments != nil) {
+                    let participiants = formRequest.arguments["participants"] as? String
+                    let attachment = formRequest.arguments["attachment"] as? String
+                    let passwordTokenFromRequest = formRequest.arguments["t"] as? String
+                    
+                    // If there is no decoded data, don't bother with anything else
+                    if let decodedData = Data(base64Encoded: attachment!, options: .ignoreUnknownCharacters) {
+                        
+                        //Do we have the correct paramaters? (are they set) and do we have the password?
+                        if (participiants != nil && attachment != nil && self.passwordToken == passwordTokenFromRequest) {
+                            let image = NSImage(data: decodedData)
+                            
+                            // Get URL to the the documents directory in the sandbox MUST BE THE USER'S DESKTOP
+                            let documentsUrl = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0] as NSURL
+                            
+                            // Add image name, could be made dynamic to support multiple pictures and avoid overwritting the send image
+                            let fileUrl = documentsUrl.appendingPathComponent("img.png")
+                            
+                            // Save image to the supplied url as a png
+                            image?.saveAsPNG(url:fileUrl!)
+                            
+                            //Yes! Ask our controller to send a message
+                            weakSelf?.uiPrint("\(request!.remoteAddressString!) -> sending \(participiants!) an attachment")
+                            weakConnector?.sendAttachment(toRecipients: participiants!, fileUrl: fileUrl!)
+                            return GCDWebServerDataResponse(html:"OK: \(participiants!) an attachment")
+                        }
+                    }
+                    
+                }
+                //We couldn't find anyway else to return, give up
+                return GCDWebServerDataResponse(html:"Invalid post data!")
+            })
+            
             //Setup our get messages post.
             //Paramaters
             //Your post data needs the following values: conversationID
@@ -287,4 +327,25 @@ extension NSTextView {
     }
 }
 
-
+// Saves the NSImage with PNG encoding to the supplied url
+extension NSImage {
+    @discardableResult
+    func saveAsPNG(url: URL) -> Bool {
+        guard let tiffData = self.tiffRepresentation else {
+            print("failed to get tiffRepresentation. url: \(url)")
+            return false
+        }
+        let imageRep = NSBitmapImageRep(data: tiffData)
+        guard let imageData = imageRep?.representation(using: .PNG, properties: [:]) else {
+            print("failed to get PNG representation. url: \(url)")
+            return false
+        }
+        do {
+            try imageData.write(to: url)
+            return true
+        } catch {
+            print("failed to write to disk. url: \(url)")
+            return false
+        }
+    }
+}
