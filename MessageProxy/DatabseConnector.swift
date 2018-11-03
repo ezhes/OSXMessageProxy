@@ -283,6 +283,7 @@ class DatabaseConstructor: NSObject {
     func getConversations() -> NSArray {
         let conversationBundle = NSMutableDictionary()
         let conversationRows = getDatabaseConversations()
+		let handleTable = getHandlerConversationDictionary()
         conversationRows?.forEach({
             conversation in
             let key = "\(conversation[ "chat_id"] as! Int64)"
@@ -297,7 +298,7 @@ class DatabaseConstructor: NSObject {
                 //Check if we have a display name built by us
                 if (oldConversation!.value(forKey: "has_manual_display_name") as? Bool == true) {
                     //Add the new person to the custom displayname
-                    oldConversation!.setValue(oldConversation!.value(forKey: "display_name") as! String + ", " + getHumanName(handle_id: conversation[ "handle_id"]), forKey: "display_name")
+					oldConversation!.setValue(oldConversation!.value(forKey: "display_name") as! String + ", " + getHumanName(handle_id: conversation[ "handle_id"], handleTableIn: handleTable), forKey: "display_name")
                 }
                 //Update
                 conversationBundle.setValue(oldConversation!, forKey: "\(key)")
@@ -315,7 +316,7 @@ class DatabaseConstructor: NSObject {
                     conversationDictionaryRepresentation.setValue(false, forKey: "has_manual_display_name") //The display name is a real named iMessage group and so it must be used as the send to in the client
                 }else {
                     //No, we don't so let's build the human one
-                    conversationDictionaryRepresentation.setValue(getHumanName(handle_id: conversation[ "handle_id"]), forKey: "display_name")
+                    conversationDictionaryRepresentation.setValue(getHumanName(handle_id: conversation[ "handle_id"], handleTableIn: handleTable), forKey: "display_name")
                     conversationDictionaryRepresentation.setValue(true, forKey: "has_manual_display_name")
                 }
                 
@@ -552,8 +553,8 @@ class DatabaseConstructor: NSObject {
         }
     }
     
-    func getHumanName(handle_id:Int) -> String {
-        let handleTable = getHandlerConversationDictionary()
+	func getHumanName(handle_id:Int,handleTableIn:[Int:String]? = nil) -> String {
+        let handleTable = handleTableIn ?? getHandlerConversationDictionary()
         let contactName = handleTable[handle_id]?.replacingOccurrences(of: "+1", with: "") //hackily fix intermittent country
         var senderName:String?
         //Let's build our sender name
