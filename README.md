@@ -1,8 +1,5 @@
 # MessageProxy: An Open Source iMessage API 
 
-![image](Screenshots/042817.png)
-
-
 This API is primarily designed to be used with [AndromedaB (open source!)](https://github.com/shusain93/Andromeda-iMessage) however it is still possible to use independently. This project uses GCDWebserver for network requests. You can more or less deduce the API from the `ViewController.swift` in the code blocks. 
 
 This setup reads the SQL database that the OSX iMessage app uses and so theoretically Apple will break it every time they update iMessage. Further, to send I am using keyboard shortcuts so you need both a sufficiently fast computer to be able handle UI automation (i.e. if it freezes all the time it'll be very unreliable). To combat the troubles of UI scripting, I have set it up to verify a message has been sent and if it fails it will notify over the notification setup your built in IFTTT. There are a few bugs in this: iOS 10 iMessage separates links at the start and end of your messages into brand new, separate ones and so the exact message text can't be found and so worst case scenario you end up accidentally spamming the same message 3 times and getting an error message back.

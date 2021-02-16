@@ -2,8 +2,8 @@
 //  FirebaseConnector.swift
 //  MessageProxy
 //
-//  Created by Salman Husain on 10/20/17.
-//  Copyright © 2017 Salman Husain. All rights reserved.
+//  Created by Allison Husain on 10/20/17.
+//  Copyright © 2017 Allison Husain. All rights reserved.
 //
 
 import Foundation

@@ -2,8 +2,8 @@
 //  DatabseConnector.swift
 //  MessageProxy
 //
-//  Created by Salman Husain on 3/1/17.
-//  Copyright © 2017 Salman Husain. All rights reserved.
+//  Created by Allison Husain on 3/1/17.
+//  Copyright © 2017 Allison Husain. All rights reserved.
 //
 
 import Foundation
@@ -483,7 +483,7 @@ class DatabaseConstructor: NSObject {
             //Now let's build our request
             let request = NSMutableURLRequest(url: URL(string: "https://maker.ifttt.com/trigger/imessageRecieved/with/key/\(IFTTT_token)")!)
             request.httpMethod = "POST"
-            request.setValue("iMessageProxy/1.0/SalmanHusain", forHTTPHeaderField: "User-Agent")
+            request.setValue("iMessageProxy/1.0/AllisonHusain", forHTTPHeaderField: "User-Agent")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = postData
             
