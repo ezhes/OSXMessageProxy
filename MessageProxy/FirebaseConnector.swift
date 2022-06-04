@@ -7,8 +7,9 @@
 //
 
 import Foundation
-import FirebaseCommunity
-
+import FirebaseDatabase
+import FirebaseAuth
+import FirebaseCore
 
 class FirebaseConnector : NSObject {
     var userTableReference: DatabaseReference!

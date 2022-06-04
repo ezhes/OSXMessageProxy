@@ -24,7 +24,7 @@ class FirebaseDatabaseConnector: NSObject {
         
         //Setup our lastFoundMessage
         let lastMessageROWIDRows = try databaseQueue?.inDatabase { db -> [Row]? in
-            let rows = try Row.fetchAll(db, "SELECT date from message ORDER BY date DESC LIMIT 1") //Get our last message and only its rowid
+            let rows = try Row.fetchAll(db, sql: "SELECT date from message ORDER BY date DESC LIMIT 1") //Get our last message and only its rowid
             return rows;
         }
         
@@ -56,7 +56,7 @@ class FirebaseDatabaseConnector: NSObject {
         do {
             var handleDictionary:[Int:String] = [:]
             let rows = try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from handle")
+                let rows = try Row.fetchAll(db, sql: "SELECT * from handle")
                 return rows;
             }
             
@@ -108,7 +108,7 @@ class FirebaseDatabaseConnector: NSObject {
     func getAttachmentInfo(forAttachmentID:Int) -> Attachment? {
         do {
             let attachmentRow =  try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from attachment where attachment.ROWID = \(forAttachmentID)")
+                let rows = try Row.fetchAll(db, sql: "SELECT * from attachment where attachment.ROWID = \(forAttachmentID)")
                 return rows;
             }
             
@@ -142,7 +142,7 @@ class FirebaseDatabaseConnector: NSObject {
     func getDatabseMessages(forChatID:Int, messageLimit:Int) -> [Row]? {
         do {
             return try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id\n" +
+                let rows = try Row.fetchAll(db, sql: "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id\n" +
                     "LEFT JOIN message_attachment_join on message_attachment_join.message_id = chat_message_join.message_id\n" + //Join our attachments IF we have it. Null if there are no attachments
                     "LEFT JOIN attachment on attachment.ROWID = message_attachment_join.attachment_id\n" + //Using the optional attachment, pull attachment locations
                     "where (chat_message_join.chat_id =\(forChatID))  ORDER BY date DESC LIMIT \(messageLimit)") //Specify order and limits + our chat ID
@@ -259,7 +259,7 @@ class FirebaseDatabaseConnector: NSObject {
     func getDatabaseConversations() -> [Row]? {
         do {
             return try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from chat_handle_join JOIN handle ON handle.ROWID = chat_handle_join.handle_id JOIN chat on chat.ROWID =  chat_handle_join.chat_id ")
+                let rows = try Row.fetchAll(db, sql: "SELECT * from chat_handle_join JOIN handle ON handle.ROWID = chat_handle_join.handle_id JOIN chat on chat.ROWID =  chat_handle_join.chat_id ")
                 return rows;
             }
         } catch  {
@@ -410,7 +410,7 @@ class FirebaseDatabaseConnector: NSObject {
             for _ in 0...12 {
                 do {
                     let _ = try self.databaseQueue?.inDatabase { db -> [Row]? in
-                        let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id LEFT JOIN message_attachment_join on message_attachment_join.message_id = chat_message_join.message_id LEFT JOIN attachment on attachment.ROWID = message_attachment_join.attachment_id where (message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\")  ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent. We're also pulling a huge amount of data here because if we did send we want to have a full valid message context
+                        let rows = try Row.fetchAll(db, sql: "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id LEFT JOIN message_attachment_join on message_attachment_join.message_id = chat_message_join.message_id LEFT JOIN attachment on attachment.ROWID = message_attachment_join.attachment_id where (message.is_from_me == 1 AND message.error == 0 AND message.service == \"iMessage\")  ORDER BY date DESC LIMIT 15") //Get the last 15 messages WE sent. We're also pulling a huge amount of data here because if we did send we want to have a full valid message context
                         rows.forEach({
                             message in
                             //Check if we're in our sent messages
@@ -472,10 +472,10 @@ class FirebaseDatabaseConnector: NSObject {
     var lastMessageDate = 0;
     
     /// Called by a global timer which checks if we have any new messages
-    func checkForNewMessages() {
+    @objc func checkForNewMessages() {
         do {
             let messageNewMessageRows = try databaseQueue?.inDatabase { db -> [Row]? in
-                let rows = try Row.fetchAll(db, "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id WHERE date > \(lastMessageDate) ORDER BY date DESC LIMIT 100") //select all our messages since our last notification round
+                let rows = try Row.fetchAll(db, sql: "SELECT * from chat_message_join JOIN message ON message.ROWID = chat_message_join.message_id WHERE date > \(lastMessageDate) ORDER BY date DESC LIMIT 100") //select all our messages since our last notification round
                 return rows;
             }
             

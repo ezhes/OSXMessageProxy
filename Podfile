@@ -6,10 +6,10 @@ target 'MessageProxy' do
   use_frameworks!
 
   # Pods for MessageProxy
-  pod 'GRDB.swift', "~> 2.0.3"
-  pod "GCDWebServer", "~> 3.3.3"
+  pod 'GRDB.swift'
+  pod "GCDWebServer"
   pod "Sparkle"
   pod 'BlueSocket'
-  pod 'FirebaseCommunity/Database'
-  pod 'FirebaseCommunity/Auth'
+  pod 'FirebaseDatabase'
+  pod 'FirebaseAuth'
 end
