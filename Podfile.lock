@@ -1,52 +1,96 @@
 PODS:
-  - BlueSocket (0.12.74)
-  - FirebaseCommunity/Auth (0.1.4):
-    - FirebaseCommunity/Core
-    - GoogleToolboxForMac/NSDictionary+URLArguments (~> 2.1)
+  - BlueSocket (2.0.2)
+  - FirebaseAuth (6.9.2):
+    - FirebaseCore (~> 6.10)
+    - GoogleUtilities/AppDelegateSwizzler (~> 6.7)
+    - GoogleUtilities/Environment (~> 6.7)
     - GTMSessionFetcher/Core (~> 1.1)
-  - FirebaseCommunity/Core (0.1.4):
-    - FirebaseCommunity/Root
-    - GoogleToolboxForMac/NSData+zlib (~> 2.1)
-  - FirebaseCommunity/Database (0.1.4):
-    - FirebaseCommunity/Core
-    - leveldb-library
-  - FirebaseCommunity/Root (0.1.4)
-  - GCDWebServer (3.3.3):
-    - GCDWebServer/Core (= 3.3.3)
-  - GCDWebServer/Core (3.3.3)
-  - GoogleToolboxForMac/DebugUtils (2.1.3):
-    - GoogleToolboxForMac/Defines (= 2.1.3)
-  - GoogleToolboxForMac/Defines (2.1.3)
-  - GoogleToolboxForMac/NSData+zlib (2.1.3):
-    - GoogleToolboxForMac/Defines (= 2.1.3)
-  - GoogleToolboxForMac/NSDictionary+URLArguments (2.1.3):
-    - GoogleToolboxForMac/DebugUtils (= 2.1.3)
-    - GoogleToolboxForMac/Defines (= 2.1.3)
-    - GoogleToolboxForMac/NSString+URLArguments (= 2.1.3)
-  - GoogleToolboxForMac/NSString+URLArguments (2.1.3)
-  - GRDB.swift (2.0.3)
-  - GTMSessionFetcher/Core (1.1.12)
-  - leveldb-library (1.18.3)
-  - Sparkle (1.18.1)
+  - FirebaseCore (6.10.4):
+    - FirebaseCoreDiagnostics (~> 1.6)
+    - GoogleUtilities/Environment (~> 6.7)
+    - GoogleUtilities/Logger (~> 6.7)
+  - FirebaseCoreDiagnostics (1.7.0):
+    - GoogleDataTransport (~> 7.4)
+    - GoogleUtilities/Environment (~> 6.7)
+    - GoogleUtilities/Logger (~> 6.7)
+    - nanopb (~> 1.30906.0)
+  - FirebaseDatabase (6.6.0):
+    - FirebaseCore (~> 6.10)
+    - leveldb-library (~> 1.22)
+  - GCDWebServer (3.5.4):
+    - GCDWebServer/Core (= 3.5.4)
+  - GCDWebServer/Core (3.5.4)
+  - GoogleDataTransport (7.5.1):
+    - nanopb (~> 1.30906.0)
+  - GoogleUtilities/AppDelegateSwizzler (6.7.2):
+    - GoogleUtilities/Environment
+    - GoogleUtilities/Logger
+    - GoogleUtilities/Network
+  - GoogleUtilities/Environment (6.7.2):
+    - PromisesObjC (~> 1.2)
+  - GoogleUtilities/Logger (6.7.2):
+    - GoogleUtilities/Environment
+  - GoogleUtilities/Network (6.7.2):
+    - GoogleUtilities/Logger
+    - "GoogleUtilities/NSData+zlib"
+    - GoogleUtilities/Reachability
+  - "GoogleUtilities/NSData+zlib (6.7.2)"
+  - GoogleUtilities/Reachability (6.7.2):
+    - GoogleUtilities/Logger
+  - GRDB.swift (5.24.1):
+    - GRDB.swift/standard (= 5.24.1)
+  - GRDB.swift/standard (5.24.1)
+  - GTMSessionFetcher/Core (1.5.0)
+  - leveldb-library (1.22.1)
+  - nanopb (1.30906.0):
+    - nanopb/decode (= 1.30906.0)
+    - nanopb/encode (= 1.30906.0)
+  - nanopb/decode (1.30906.0)
+  - nanopb/encode (1.30906.0)
+  - PromisesObjC (1.2.12)
+  - Sparkle (2.1.0)
 
 DEPENDENCIES:
   - BlueSocket
-  - FirebaseCommunity/Auth
-  - FirebaseCommunity/Database
-  - GCDWebServer (~> 3.3.3)
-  - GRDB.swift (~> 2.0.3)
+  - FirebaseAuth
+  - FirebaseDatabase
+  - GCDWebServer
+  - GRDB.swift
   - Sparkle
 
+SPEC REPOS:
+  trunk:
+    - BlueSocket
+    - FirebaseAuth
+    - FirebaseCore
+    - FirebaseCoreDiagnostics
+    - FirebaseDatabase
+    - GCDWebServer
+    - GoogleDataTransport
+    - GoogleUtilities
+    - GRDB.swift
+    - GTMSessionFetcher
+    - leveldb-library
+    - nanopb
+    - PromisesObjC
+    - Sparkle
+
 SPEC CHECKSUMS:
-  BlueSocket: 8ffc42716ba13e19b3b024aade278b7dd77fa2f7
-  FirebaseCommunity: 158175f2781bd436b75a55d379e0ea61c3feee7d
-  GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
-  GoogleToolboxForMac: 2501e2ad72a52eb3dfe7bd9aee7dad11b858bd20
-  GRDB.swift: a78f5ade97b498c128a1652b1fecde9150f505d1
-  GTMSessionFetcher: ebaa1f79a5366922c1735f1566901f50beba23b7
-  leveldb-library: 10fb39c39e243db4af1828441162405bbcec1404
-  Sparkle: 06ea33170007c5937ee54da481b4481af98fac79
+  BlueSocket: 1f02d81f5eeb695aebdb1305ef3173b15a8627cf
+  FirebaseAuth: c92d49ada7948d1a23466e3db17bc4c2039dddc3
+  FirebaseCore: d3a978a3cfa3240bf7e4ba7d137fdf5b22b628ec
+  FirebaseCoreDiagnostics: 770ac5958e1372ce67959ae4b4f31d8e127c3ac1
+  FirebaseDatabase: 13a865a4b85897462b930eb683bda8f52583713f
+  GCDWebServer: 2c156a56c8226e2d5c0c3f208a3621ccffbe3ce4
+  GoogleDataTransport: f56af7caa4ed338dc8e138a5d7c5973e66440833
+  GoogleUtilities: 7f2f5a07f888cdb145101d6042bc4422f57e70b3
+  GRDB.swift: b3180ce2135fc06a453297889b746b1478c4d8c7
+  GTMSessionFetcher: b3503b20a988c4e20cc189aa798fd18220133f52
+  leveldb-library: 50c7b45cbd7bf543c81a468fe557a16ae3db8729
+  nanopb: 59317e09cf1f1a0af72f12af412d54edf52603fc
+  PromisesObjC: 3113f7f76903778cf4a0586bd1ab89329a0b7b97
+  Sparkle: 7f5f6d4328458515e23272f4138e610c1fa3e32d
 
-PODFILE CHECKSUM: c7a8846f643ada23c175fe88a645453dd09de94a
+PODFILE CHECKSUM: 94c4ff63f659981a69a33fb59af18703114cf5e6
 
-COCOAPODS: 1.3.1
+COCOAPODS: 1.11.3

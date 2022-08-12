@@ -481,7 +481,7 @@ class FirebaseDatabaseConnector: NSObject {
             
             //Do we have any updates? We don't want to enumerate if we have nothing
             if messageNewMessageRows != nil && messageNewMessageRows!.count > 0 {
-                print("Got \(messageNewMessageRows!.count) new messagess. Current last is \(lastMessageDate)")
+                print("Got \(messageNewMessageRows!.count) new messages. Current last is \(lastMessageDate)")
                 //Cache a lookup handle table because we need it now
                 let handleTable = getHandlerConversationDictionary()
                 firebaseConnector?.updateConversations(conversation: getConversations())

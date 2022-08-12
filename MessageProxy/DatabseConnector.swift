@@ -518,7 +518,7 @@ class DatabaseConstructor: NSObject {
             
             //Do we have any updates? We don't want to enumerate if we have nothing
             if messageNewMessageRows != nil && messageNewMessageRows!.count > 0 {
-                print("Got \(messageNewMessageRows!.count) new messagess. Current last is \(lastMessageDate)")
+                print("Got \(messageNewMessageRows!.count) new messages. Current last is \(lastMessageDate)")
                 //Cache a lookup handle table because we need it now
                 let handleTable = getHandlerConversationDictionary()
                 //Now let's parse our messages
@@ -529,7 +529,8 @@ class DatabaseConstructor: NSObject {
                     //Store our message handle id because we use it often
                     let handleID = newMessage[ "handle_id"] as? Int64
                     let swiftyMessage = convertMessageToDictionary(message: newMessage, handleTable: handleTable)
-                    
+                    let message = newMessage[ "text"] as? String
+                    print("Text \(message!)")
                     //Make sure we didn't send our message. Notifying about a SENT message is stupid
                     if (newMessage[ "is_from_me"] == 0) {
                         print("Sending...")

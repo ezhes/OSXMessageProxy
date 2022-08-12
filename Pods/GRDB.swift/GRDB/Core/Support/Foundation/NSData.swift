@@ -1,11 +1,12 @@
+#if !os(Linux)
 import Foundation
 
 /// NSData is convertible to and from DatabaseValue.
-extension NSData : DatabaseValueConvertible {
+extension NSData: DatabaseValueConvertible {
     
     /// Returns a value that can be stored in the database.
     public var databaseValue: DatabaseValue {
-        return (self as Data).databaseValue
+        (self as Data).databaseValue
     }
     
     /// Returns an NSData initialized from *dbValue*, if it contains
@@ -17,3 +18,4 @@ extension NSData : DatabaseValueConvertible {
         return cast(data)
     }
 }
+#endif

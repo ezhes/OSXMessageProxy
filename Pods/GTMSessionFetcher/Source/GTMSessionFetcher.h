@@ -342,15 +342,6 @@
   #endif  // __has_feature(nullability)
 #endif  // GTM_NULLABLE
 
-#if (TARGET_OS_TV \
-     || TARGET_OS_WATCH \
-     || (!TARGET_OS_IPHONE && defined(MAC_OS_X_VERSION_10_12) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12) \
-     || (TARGET_OS_IPHONE && defined(__IPHONE_10_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_10_0))
-#define GTMSESSION_DEPRECATE_ON_2016_SDKS(_MSG) __attribute__((deprecated("" _MSG)))
-#else
-#define GTMSESSION_DEPRECATE_ON_2016_SDKS(_MSG)
-#endif
-
 #ifndef GTM_DECLARE_GENERICS
   #if __has_feature(objc_generics)
     #define GTM_DECLARE_GENERICS 1
@@ -424,6 +415,32 @@ extern "C" {
   #endif  // GTM_USE_SESSION_FETCHER
 #endif
 
+// When creating background sessions to perform out-of-process uploads and
+// downloads, on app launch any background sessions must be reconnected in
+// order to receive events that occurred while the app was not running.
+//
+// The fetcher will automatically attempt to recreate the sessions on app
+// start, but doing so reads from NSUserDefaults. This may have launch-time
+// performance impacts.
+//
+// To avoid launch performance impacts, on iPhone/iPad with iOS 13+ the
+// GTMSessionFetcher class will register for the app launch notification and
+// perform the reconnect then.
+//
+// Apps targeting Mac or older iOS SDKs can opt into the new behavior by defining
+// GTMSESSION_RECONNECT_BACKGROUND_SESSIONS_ON_LAUNCH=1.
+//
+// Apps targeting new SDKs can force the old behavior by defining
+// GTMSESSION_RECONNECT_BACKGROUND_SESSIONS_ON_LAUNCH = 0.
+#ifndef GTMSESSION_RECONNECT_BACKGROUND_SESSIONS_ON_LAUNCH
+  // Default to the on-launch behavior for iOS 13+.
+  #if TARGET_OS_IOS && defined(__IPHONE_13_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_13_0
+    #define GTMSESSION_RECONNECT_BACKGROUND_SESSIONS_ON_LAUNCH 1
+  #else
+    #define GTMSESSION_RECONNECT_BACKGROUND_SESSIONS_ON_LAUNCH 0
+  #endif
+#endif
+
 GTM_ASSUME_NONNULL_BEGIN
 
 // Notifications
@@ -455,6 +472,7 @@ extern NSString *const kGTMSessionFetcherErrorDomain;
 // userInfo dictionary with key kGTMSessionFetcherStatusDataKey.
 extern NSString *const kGTMSessionFetcherStatusDomain;
 extern NSString *const kGTMSessionFetcherStatusDataKey;
+extern NSString *const kGTMSessionFetcherStatusDataContentTypeKey;
 
 // When a fetch fails with an error, these keys are included in the error userInfo
 // dictionary if retries were attempted.
@@ -541,6 +559,9 @@ typedef void (^GTMSessionFetcherRetryResponse)(BOOL shouldRetry);
 typedef void (^GTMSessionFetcherRetryBlock)(BOOL suggestedWillRetry,
                                             NSError * GTM_NULLABLE_TYPE error,
                                             GTMSessionFetcherRetryResponse response);
+
+API_AVAILABLE(ios(10.0), macosx(10.12), tvos(10.0), watchos(3.0))
+typedef void (^GTMSessionFetcherMetricsCollectionBlock)(NSURLSessionTaskMetrics *metrics);
 
 typedef void (^GTMSessionFetcherTestResponse)(NSHTTPURLResponse * GTM_NULLABLE_TYPE response,
                                               NSData * GTM_NULLABLE_TYPE data,
@@ -630,7 +651,7 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 - (GTM_NULLABLE NSDate *)stoppedAllFetchersDate;
 
 // Methods for compatibility with the old GTMHTTPFetcher.
-@property(readonly, strong, GTM_NULLABLE) NSOperationQueue *delegateQueue;
+@property(atomic, readonly, strong, GTM_NULLABLE) NSOperationQueue *delegateQueue;
 
 @end  // @protocol GTMSessionFetcherServiceProtocol
 
@@ -652,25 +673,25 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 
 - (BOOL)isAuthorizedRequest:(NSURLRequest *)request;
 
-@property(strong, readonly, GTM_NULLABLE) NSString *userEmail;
+@property(atomic, strong, readonly, GTM_NULLABLE) NSString *userEmail;
 
 @optional
 
 // Indicate if authorization may be attempted. Even if this succeeds,
 // authorization may fail if the user's permissions have been revoked.
-@property(readonly) BOOL canAuthorize;
+@property(atomic, readonly) BOOL canAuthorize;
 
 // For development only, allow authorization of non-SSL requests, allowing
 // transmission of the bearer token unencrypted.
-@property(assign) BOOL shouldAuthorizeAllRequests;
+@property(atomic, assign) BOOL shouldAuthorizeAllRequests;
 
 - (void)authorizeRequest:(GTM_NULLABLE NSMutableURLRequest *)request
        completionHandler:(void (^)(NSError * GTM_NULLABLE_TYPE error))handler;
 
 #if GTM_USE_SESSION_FETCHER
-@property (weak, GTM_NULLABLE) id<GTMSessionFetcherServiceProtocol> fetcherService;
+@property(atomic, weak, GTM_NULLABLE) id<GTMSessionFetcherServiceProtocol> fetcherService;
 #else
-@property (weak, GTM_NULLABLE) id<GTMHTTPFetcherServiceProtocol> fetcherService;
+@property(atomic, weak, GTM_NULLABLE) id<GTMHTTPFetcherServiceProtocol> fetcherService;
 #endif
 
 - (BOOL)primeForRefresh;
@@ -727,19 +748,11 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 
 // The fetcher's request.  This may not be set after beginFetch has been invoked. The request
 // may change due to redirects.
-@property(strong, GTM_NULLABLE) NSURLRequest *request;
+@property(atomic, strong, GTM_NULLABLE) NSURLRequest *request;
 
 // Set a header field value on the request. Header field value changes will not
 // affect a fetch after the fetch has begun.
 - (void)setRequestValue:(GTM_NULLABLE NSString *)value forHTTPHeaderField:(NSString *)field;
-
-// The fetcher's request (deprecated.)
-//
-// Exposing a mutable object in the interface was convenient but a bad design decision due
-// to thread-safety requirements.  Clients should use the request property and
-// setRequestValue:forHTTPHeaderField: instead.
-@property(atomic, readonly, GTM_NULLABLE) NSMutableURLRequest *mutableRequest
-    GTMSESSION_DEPRECATE_ON_2016_SDKS("use 'request' or '-setRequestValue:forHTTPHeaderField:'");
 
 // Data used for resuming a download task.
 @property(atomic, readonly, GTM_NULLABLE) NSData *downloadResumeData;
@@ -777,6 +790,12 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 
 // Indicates a fetcher created to finish a background session task.
 @property(atomic, readonly) BOOL wasCreatedFromBackgroundSession;
+
+// Indicates the client has committed to reconnecting this background session when
+// the app restarts. If this value is YES, the session fetcher will not automatically
+// call beginFetchWithCompletionHandler: on the restored fetcher on app start, and
+// the session will not handle system events until the client explicitly does.
+@property(atomic, assign) BOOL clientWillReconnectBackgroundSession;
 
 // Additional user-supplied data to encode into the session identifier. Since session identifier
 // length limits are unspecified, this should be kept small. Key names beginning with an underscore
@@ -826,7 +845,7 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 //   "Background Session Task state persistence"
 //   https://forums.developer.apple.com/thread/11554
 //
-@property(assign) BOOL useBackgroundSession;
+@property(atomic, assign) BOOL useBackgroundSession;
 
 // Indicates if the fetcher was started using a background session.
 @property(atomic, readonly, getter=isUsingBackgroundSession) BOOL usingBackgroundSession;
@@ -985,6 +1004,13 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 // fetch.
 // See comments at the top of this file.
 @property(atomic, copy, GTM_NULLABLE) GTMSessionFetcherRetryBlock retryBlock;
+
+// The optional block for collecting the metrics of the present session.
+//
+// This is called on the callback queue.
+@property(atomic, copy, GTM_NULLABLE)
+    GTMSessionFetcherMetricsCollectionBlock metricsCollectionBlock API_AVAILABLE(
+        ios(10.0), macosx(10.12), tvos(10.0), watchos(3.0));
 
 // Retry intervals must be strictly less than maxRetryInterval, else
 // they will be limited to maxRetryInterval and no further retries will
@@ -1246,7 +1272,11 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
 // can catch those.
 
 #ifdef __OBJC__
-#if DEBUG
+// If asserts are entirely no-ops, the synchronization monitor is just a bunch
+// of counting code that doesn't report exceptional circumstances in any way.
+// Only build the synchronization monitor code if NS_BLOCK_ASSERTIONS is not
+// defined or asserts are being logged instead.
+#if DEBUG && (!defined(NS_BLOCK_ASSERTIONS) || GTMSESSION_ASSERT_AS_LOG)
   #define __GTMSessionMonitorSynchronizedVariableInner(varname, counter) \
       varname ## counter
   #define __GTMSessionMonitorSynchronizedVariable(varname, counter)  \
@@ -1293,7 +1323,7 @@ NSData * GTM_NULLABLE_TYPE GTMDataFromInputStream(NSInputStream *inputStream, NS
                                allowRecursive:(BOOL)allowRecursive
                                  functionName:(const char *)functionName;
 // Return the names of the functions that hold sync on the object, or nil if none.
-+ (NSArray *)functionsHoldingSynchronizationOnObject:(id)object;
++ (NSArray * GTM_NULLABLE_TYPE)functionsHoldingSynchronizationOnObject:(id)object;
 @end
 
 #else

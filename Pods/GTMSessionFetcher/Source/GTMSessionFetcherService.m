@@ -121,6 +121,7 @@ NSString *const kGTMSessionFetcherServiceSessionKey
             retryBlock = _retryBlock,
             maxRetryInterval = _maxRetryInterval,
             minRetryInterval = _minRetryInterval,
+            metricsCollectionBlock = _metricsCollectionBlock,
             properties = _properties,
             unusedSessionTimeout = _unusedSessionTimeout,
             testBlock = _testBlock;
@@ -186,6 +187,9 @@ NSString *const kGTMSessionFetcherServiceSessionKey
   fetcher.retryBlock = self.retryBlock;
   fetcher.maxRetryInterval = self.maxRetryInterval;
   fetcher.minRetryInterval = self.minRetryInterval;
+  if (@available(iOS 10.0, macOS 10.12, tvOS 10.0, watchOS 3.0, *)) {
+    fetcher.metricsCollectionBlock = self.metricsCollectionBlock;
+  }
   fetcher.properties = self.properties;
   fetcher.service = self;
   if (self.cookieStorageMethod >= 0) {
@@ -374,14 +378,18 @@ NSString *const kGTMSessionFetcherServiceSessionKey
 }
 
 // Internal utility. Returns a fetcher's delegate if it's a dispatcher, or nil if the fetcher
-// is its own delegate and has no dispatcher.
+// is its own delegate (possibly via proxy) and has no dispatcher.
 - (GTMSessionFetcherSessionDelegateDispatcher *)delegateDispatcherForFetcher:(GTMSessionFetcher *)fetcher {
   GTMSessionCheckNotSynchronized(self);
 
   NSURLSession *fetcherSession = fetcher.session;
   if (fetcherSession) {
     id<NSURLSessionDelegate> fetcherDelegate = fetcherSession.delegate;
-    BOOL hasDispatcher = (fetcherDelegate != nil && fetcherDelegate != fetcher);
+    // If the delegate is non-nil and claims to be a GTMSessionFetcher, there is no dispatcher;
+    // assume the fetcher is the delegate or has been proxied (some third-party frameworks
+    // are known to swizzle NSURLSession to proxy its delegate).
+    BOOL hasDispatcher = (fetcherDelegate != nil &&
+                          ![fetcherDelegate isKindOfClass:[GTMSessionFetcher class]]);
     if (hasDispatcher) {
       GTMSESSION_ASSERT_DEBUG([fetcherDelegate isKindOfClass:[GTMSessionFetcherSessionDelegateDispatcher class]],
                               @"Fetcher delegate class: %@", [fetcherDelegate class]);
@@ -881,6 +889,19 @@ NSString *const kGTMSessionFetcherServiceSessionKey
                                   statusCode:(fakedErrorOrNil ? 500 : 200)
                                  HTTPVersion:@"HTTP/1.1"
                                 headerFields:nil];
+  return [self mockFetcherServiceWithFakedData:fakedDataOrNil
+                                 fakedResponse:fakedResponse
+                                    fakedError:fakedErrorOrNil];
+#else
+  GTMSESSION_ASSERT_DEBUG(0, @"Test blocks disabled");
+  return nil;
+#endif  // GTM_DISABLE_FETCHER_TEST_BLOCK
+}
+
++ (instancetype)mockFetcherServiceWithFakedData:(NSData *)fakedDataOrNil
+                                  fakedResponse:(NSHTTPURLResponse *)fakedResponse
+                                     fakedError:(NSError *)fakedErrorOrNil {
+#if !GTM_DISABLE_FETCHER_TEST_BLOCK
   GTMSessionFetcherService *service = [[self alloc] init];
   service.allowedInsecureSchemes = @[ @"http" ];
   service.testBlock = ^(GTMSessionFetcher *fetcherToTest,
@@ -1262,6 +1283,14 @@ didCompleteWithError:(NSError *)error {
   [fetcher URLSession:session
                  task:task
  didCompleteWithError:error];
+}
+
+- (void)URLSession:(NSURLSession *)session
+                          task:(NSURLSessionTask *)task
+    didFinishCollectingMetrics:(NSURLSessionTaskMetrics *)metrics
+    API_AVAILABLE(ios(10.0), macosx(10.12), tvos(10.0), watchos(3.0)) {
+  id<NSURLSessionTaskDelegate> fetcher = [self fetcherForTask:task];
+  [fetcher URLSession:session task:task didFinishCollectingMetrics:metrics];
 }
 
 // NSURLSessionDataDelegate protocol methods.

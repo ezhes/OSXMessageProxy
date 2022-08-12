@@ -2,7 +2,7 @@
 
 /// Record is a class that wraps a table row, or the result of any query. It is
 /// designed to be subclassed.
-open class Record : RowConvertible, TableMapping, Persistable {
+open class Record: FetchableRecord, TableRecord, PersistableRecord {
     
     // MARK: - Initializers
     
@@ -11,9 +11,9 @@ open class Record : RowConvertible, TableMapping, Persistable {
     }
     
     /// Creates a Record from a row.
-    required public init(row: Row) {
+    public required init(row: Row) {
         if row.isFetched {
-            // Take care of the hasPersistentChangedValues flag.
+            // Take care of the hasDatabaseChanges flag.
             //
             // Row may be a reused row which will turn invalid as soon as the
             // SQLite statement is iterated. We need to store an
@@ -32,7 +32,7 @@ open class Record : RowConvertible, TableMapping, Persistable {
     ///
     ///     class Player : Record {
     ///         override class var databaseTableName: String {
-    ///             return "players"
+    ///             return "player"
     ///         }
     ///     }
     ///
@@ -55,16 +55,16 @@ open class Record : RowConvertible, TableMapping, Persistable {
     /// `didInsert(with:for:)` method is not called upon successful insertion,
     /// even if a row was actually inserted without any conflict.
     ///
-    /// See https://www.sqlite.org/lang_conflict.html
+    /// See <https://www.sqlite.org/lang_conflict.html>
     open class var persistenceConflictPolicy: PersistenceConflictPolicy {
-        return PersistenceConflictPolicy(insert: .abort, update: .abort)
+        PersistenceConflictPolicy(insert: .abort, update: .abort)
     }
     
     /// The default request selection.
     ///
-    /// Unless this method is overriden, requests select all columns:
+    /// Unless this method is overridden, requests select all columns:
     ///
-    ///     // SELECT * FROM players
+    ///     // SELECT * FROM player
     ///     try Player.fetchAll(db)
     ///
     /// You can override this property and provide an explicit list
@@ -76,7 +76,7 @@ open class Record : RowConvertible, TableMapping, Persistable {
     ///         }
     ///     }
     ///
-    ///     // SELECT id, name FROM players
+    ///     // SELECT id, name FROM player
     ///     try RestrictedPlayer.fetchAll(db)
     ///
     /// You can also add extra columns such as the `rowid` column:
@@ -87,13 +87,13 @@ open class Record : RowConvertible, TableMapping, Persistable {
     ///         }
     ///     }
     ///
-    ///     // SELECT *, rowid FROM players
+    ///     // SELECT *, rowid FROM player
     ///     try ExtendedPlayer.fetchAll(db)
     open class var databaseSelection: [SQLSelectable] {
-        return [AllColumns()]
+        [AllColumns()]
     }
     
-
+    
     /// Defines the values persisted in the database.
     ///
     /// Store in the *container* argument all values that should be stored in
@@ -116,7 +116,7 @@ open class Record : RowConvertible, TableMapping, Persistable {
     open func encode(to container: inout PersistenceContainer) {
     }
     
-    /// Notifies the record that it was succesfully inserted.
+    /// Notifies the record that it was successfully inserted.
     ///
     /// Do not call this method directly: it is called for you, in a protected
     /// dispatch queue, with the inserted RowID and the eventual
@@ -146,24 +146,17 @@ open class Record : RowConvertible, TableMapping, Persistable {
     /// `encode(to:)` method.
     ///
     /// The eventual primary key is copied, as well as the
-    /// `hasPersistentChangedValues` flag.
+    /// `hasDatabaseChanges` flag.
     ///
     /// - returns: A copy of self.
     open func copy() -> Self {
-        let row: Row
-        #if swift(>=3.1)
-            row = Row(self)
-        #else
-            // workaround weird Swift 3.0 glitch
-            row = Row(self as! MutablePersistable)
-        #endif
-        let copy = type(of: self).init(row: row)
+        let copy = type(of: self).init(row: Row(self))
         copy.referenceRow = referenceRow
         return copy
     }
     
     
-    // MARK: - Changes Tracking
+    // MARK: - Compare with Previous Versions
     
     /// A boolean that indicates whether the record has changes that have not
     /// been saved.
@@ -181,8 +174,8 @@ open class Record : RowConvertible, TableMapping, Persistable {
     /// you may set it to true or false when you know better. Setting it to
     /// false does not prevent it from turning true on subsequent modifications
     /// of the record.
-    public var hasPersistentChangedValues: Bool {
-        get { return makePersistentChangedValuesIterator().next() != nil }
+    public var hasDatabaseChanges: Bool {
+        get { databaseChangesIterator().next() != nil }
         set { referenceRow = newValue ? nil : Row(self) }
     }
     
@@ -194,30 +187,25 @@ open class Record : RowConvertible, TableMapping, Persistable {
     /// Unless the record has actually been fetched or saved, the old values
     /// are nil.
     ///
-    /// See `hasPersistentChangedValues` for more information.
-    public var persistentChangedValues: [String: DatabaseValue?] {
-        var persistentChangedValues: [String: DatabaseValue?] = [:]
-        
-        for (key, value) in makePersistentChangedValuesIterator() {
-            persistentChangedValues[key] = value
-        }
-        return persistentChangedValues    
+    /// See `hasDatabaseChanges` for more information.
+    public var databaseChanges: [String: DatabaseValue?] {
+        Dictionary(uniqueKeysWithValues: databaseChangesIterator())
     }
     
-    // A change iterator that is used by both hasPersistentChangedValues and
+    // A change iterator that is used by both hasDatabaseChanges and
     // persistentChangedValues properties.
-    private func makePersistentChangedValuesIterator() -> AnyIterator<(column: String, old: DatabaseValue?)> {
+    private func databaseChangesIterator() -> AnyIterator<(String, DatabaseValue?)> {
         let oldRow = referenceRow
         var newValueIterator = PersistenceContainer(self).makeIterator()
         return AnyIterator {
             // Loop until we find a change, or exhaust columns:
             while let (column, newValue) = newValueIterator.next() {
-                let new = newValue?.databaseValue ?? .null
-                guard let oldRow = oldRow, let old: DatabaseValue = oldRow[column] else {
-                    return (column: column, old: nil)
+                let newDbValue = newValue?.databaseValue ?? .null
+                guard let oldRow = oldRow, let oldDbValue: DatabaseValue = oldRow[column] else {
+                    return (column, nil)
                 }
-                if new != old {
-                    return (column: column, old: old)
+                if newDbValue != oldDbValue {
+                    return (column, oldDbValue)
                 }
             }
             return nil
@@ -225,16 +213,15 @@ open class Record : RowConvertible, TableMapping, Persistable {
     }
     
     
-    /// Reference row for the *hasPersistentChangedValues* property.
+    /// Reference row for the *hasDatabaseChanges* property.
     var referenceRow: Row?
     
-
+    
     // MARK: - CRUD
     
     /// Executes an INSERT statement.
     ///
-    /// On success, this method sets the *hasPersistentChangedValues* flag
-    /// to false.
+    /// On success, this method sets the *hasDatabaseChanges* flag to false.
     ///
     /// This method is guaranteed to have inserted a row in the database if it
     /// returns without error.
@@ -257,20 +244,19 @@ open class Record : RowConvertible, TableMapping, Persistable {
             didInsert(with: rowID, for: rowIDColumn)
             
             // Update persistenceContainer with inserted id, so that we can
-            // set hasPersistentChangedValues to false:
+            // set hasDatabaseChanges to false:
             if let rowIDColumn = rowIDColumn {
                 persistenceContainer[caseInsensitive: rowIDColumn] = rowID
             }
         }
         
-        // Set hasPersistentChangedValues to false
+        // Set hasDatabaseChanges to false
         referenceRow = Row(persistenceContainer)
     }
     
     /// Executes an UPDATE statement.
     ///
-    /// On success, this method sets the *hasPersistentChangedValues* flag
-    /// to false.
+    /// On success, this method sets the *hasDatabaseChanges* flag to false.
     ///
     /// This method is guaranteed to have updated a row in the database if it
     /// returns without error.
@@ -284,43 +270,49 @@ open class Record : RowConvertible, TableMapping, Persistable {
         // The simplest code would be:
         //
         //     try performUpdate(db, columns: columns)
-        //     hasPersistentChangedValues = false
+        //     hasDatabaseChanges = false
         //
         // But this would trigger two calls to `encode(to:)`.
         let dao = try DAO(db, self)
-        guard let statement = try dao.updateStatement(columns: columns, onConflict: type(of: self).persistenceConflictPolicy.conflictResolutionForUpdate) else {
+        guard let statement = try dao.updateStatement(
+                columns: columns,
+                onConflict: type(of: self).persistenceConflictPolicy.conflictResolutionForUpdate)
+        else {
             // Nil primary key
-            throw PersistenceError.recordNotFound(self)
+            throw dao.makeRecordNotFoundError()
         }
         try statement.execute()
         if db.changesCount == 0 {
-            throw PersistenceError.recordNotFound(self)
+            throw dao.makeRecordNotFoundError()
         }
         
-        // Set hasPersistentChangedValues to false
+        // Set hasDatabaseChanges to false
         referenceRow = Row(dao.persistenceContainer)
     }
     
     /// If the record has been changed, executes an UPDATE statement so that
     /// those changes and only those changes are saved in the database.
     ///
-    /// On success, this method sets the *hasPersistentChangedValues* flag
-    /// to false.
+    /// On success, this method sets the *hasDatabaseChanges* flag to false.
     ///
     /// This method is guaranteed to have saved the eventual changes in the
     /// database if it returns without error.
     ///
     /// - parameter db: A database connection.
     /// - parameter columns: The columns to update.
+    /// - returns: Whether the record had changes.
     /// - throws: A DatabaseError is thrown whenever an SQLite error occurs.
     ///   PersistenceError.recordNotFound is thrown if the primary key does not
     ///   match any row in the database and record could not be updated.
-    final public func updateChanges(_ db: Database) throws {
-        let changedColumns = Set(persistentChangedValues.keys)
-        guard !changedColumns.isEmpty else {
-            return
+    @discardableResult
+    public final func updateChanges(_ db: Database) throws -> Bool {
+        let changedColumns = Set(databaseChanges.keys)
+        if changedColumns.isEmpty {
+            return false
+        } else {
+            try update(db, columns: changedColumns)
+            return true
         }
-        try update(db, columns: changedColumns)
     }
     
     /// Executes an INSERT or an UPDATE statement so that `self` is saved in
@@ -331,23 +323,24 @@ open class Record : RowConvertible, TableMapping, Persistable {
     ///
     /// Otherwise, performs an insert.
     ///
-    /// On success, this method sets the *hasPersistentChangedValues* flag
-    /// to false.
+    /// On success, this method sets the *hasDatabaseChanges* flag to false.
     ///
     /// This method is guaranteed to have inserted or updated a row in the
     /// database if it returns without error.
     ///
+    /// You can't override this method. Instead, override `insert(_:)`
+    /// or `update(_:columns:)`.
+    ///
     /// - parameter db: A database connection.
     /// - throws: A DatabaseError whenever an SQLite error occurs, or errors
     ///   thrown by update().
-    final public func save(_ db: Database) throws {
+    public final func save(_ db: Database) throws {
         try performSave(db)
     }
     
     /// Executes a DELETE statement.
     ///
-    /// On success, this method sets the *hasPersistentChangedValues* flag
-    /// to true.
+    /// On success, this method sets the *hasDatabaseChanges* flag to true.
     ///
     /// - parameter db: A database connection.
     /// - returns: Whether a database row was deleted.
@@ -357,8 +350,8 @@ open class Record : RowConvertible, TableMapping, Persistable {
         defer {
             // Future calls to update() will throw NotFound. Make the user
             // a favor and make sure this error is thrown even if she checks the
-            // hasPersistentChangedValues flag:
-            hasPersistentChangedValues = true
+            // hasDatabaseChanges flag:
+            hasDatabaseChanges = true
         }
         return try performDelete(db)
     }
