@@ -63,7 +63,7 @@ class SocketServer : NSObject {
     /// Build the server
     func setupServer() {
         DispatchQueue.global(qos: .background).async {
-            [unowned self] in
+            [self] in
             
             do {
                 // Create an IPV6 socket...

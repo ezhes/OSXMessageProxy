@@ -1,11 +1,12 @@
+#if canImport(CoreGraphics)
 import CoreGraphics
 
 /// CGFloat adopts DatabaseValueConvertible
-extension CGFloat : DatabaseValueConvertible {
-
+extension CGFloat: DatabaseValueConvertible {
+    
     /// Returns a value that can be stored in the database.
     public var databaseValue: DatabaseValue {
-        return Double(self).databaseValue
+        Double(self).databaseValue
     }
     
     /// Returns a CGFloat initialized from *dbValue*, if possible.
@@ -16,3 +17,4 @@ extension CGFloat : DatabaseValueConvertible {
         return CGFloat(double)
     }
 }
+#endif

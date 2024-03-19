@@ -1,44 +1,58 @@
-![macOS](https://img.shields.io/badge/os-macOS-green.svg?style=flat)
-![iOS](https://img.shields.io/badge/os-iOS-green.svg?style=flat)
-![Linux](https://img.shields.io/badge/os-linux-green.svg?style=flat)
-![Apache 2](https://img.shields.io/badge/license-Apache2-blue.svg?style=flat)
-![](https://img.shields.io/badge/Swift-3.0-orange.svg?style=flat)
-![](https://img.shields.io/badge/Swift-4.0-orange.svg?style=flat)
-[![Build Status - Master](https://travis-ci.org/IBM-Swift/BlueSocket.svg?branch=master)](https://travis-ci.org/IBM-Swift/BlueSocket)
+<p align="center">
+    <a href="https://www.kitura.io/packages.html#all">
+    <img src="https://img.shields.io/badge/docs-kitura.io-1FBCE4.svg" alt="APIDoc">
+    </a>
+    <a href="https://travis-ci.org/Kitura/BlueSocket">
+    <img src="https://travis-ci.org/Kitura/BlueSocket.svg?branch=master" alt="Build Status - Master">
+    </a>
+    <img src="https://img.shields.io/badge/os-macOS-green.svg?style=flat" alt="macOS">
+    <img src="https://img.shields.io/badge/os-iOS-green.svg?style=flat" alt="iOS">
+    <img src="https://img.shields.io/badge/os-linux-green.svg?style=flat" alt="Linux">
+    <img src="https://img.shields.io/badge/license-Apache2-blue.svg?style=flat" alt="Apache 2">
+    <a href="http://swift-at-ibm-slack.mybluemix.net/">
+    <img src="http://swift-at-ibm-slack.mybluemix.net/badge.svg" alt="Slack Status">
+    </a>
+</p>
 
 # BlueSocket
 
-## Overview
 Socket framework for Swift using the Swift Package Manager. Works on iOS, macOS, and Linux.
-
-## Contents
-
-* Socket: Generic low level socket framework. Pure Swift.
 
 ## Prerequisites
 
 ### Swift
 
-* Swift Open Source `swift-3.0.1-RELEASE` toolchain (**Minimum REQUIRED for latest release**)
-* Swift Open Source `swift-4.0.0-RELEASE` toolchain (**Recommended**)
-* Swift toolchain included in *Xcode Version 9.0 (9A325) or higher*.
+* Swift Open Source `swift-5.1-RELEASE` toolchain (**Minimum REQUIRED for latest release**)
+* Swift Open Source `swift-5.4-RELEASE` toolchain (**Recommended**)
+* Swift toolchain included in *Xcode Version 11.0 or higher*.
 
 ### macOS
 
-* macOS 10.11.6 (*El Capitan*) or higher
-* Xcode Version 8.3.2 (8E2002) or higher using one of the above toolchains (*Recommended*)
-* Xcode Version 9.0  (9A325) or higher using the included toolchain.
+* macOS 10.14.6 (*Mojave*) or higher.
+* Xcode Version 11.0 or higher using one of the above toolchains.
+* Xcode Version 12.5 or higher using the included toolchain (*Recommended*).
+* Secure Transport is provided by macOS.
 
 ### iOS
 
 * iOS 10.0 or higher
-* Xcode Version 8.3.2 (8E2002) or higher using one of the above toolchains (*Recommended*)
-* Xcode Version 9.0  (9A325) or higher using the included toolchain.
+* Xcode Version 11.0 or higher using one of the above toolchains.
+* Xcode Version 12.5 or higher using the included toolchain (*Recommended*).
+
+Note:
+
+If creating a UDP server on iOS, you may need to follow a few steps:
+
+* [Request multicast entitlement from Apple ](https://developer.apple.com/documentation/bundleresources/entitlements/com_apple_developer_networking_multicast
+)
+* Add the Multicast Network capability to your App identifier
+* For more details, see discussion in [Issue 194](https://github.com/Kitura/BlueSocket/issues/194)
+
 
 ### Linux
 
-* Ubuntu 16.04 (or 16.10 but only tested on 16.04)
-* One of the Swift Open Source toolchain listed above
+* Ubuntu 16.04 or 18.04
+* One of the Swift Open Source toolchains listed above.
 
 ### Other Platforms
 
@@ -47,7 +61,9 @@ Socket framework for Swift using the Swift Package Manager. Works on iOS, macOS,
 
 ### Add-ins
 
-* [BlueSSLService](https://github.com/IBM-Swift/BlueSSLService.git) can be used to add **SSL/TLS** support.
+* [BlueSSLService](https://github.com/Kitura/BlueSSLService.git) can be used to add **SSL/TLS** support.
+	- If using this package, please note that the  **libssl-dev** package is required to be installed when building on Linux.
+
 
 ## Build
 
@@ -78,14 +94,14 @@ To run the supplied unit tests for **Socket** from the command line:
 To include BlueSocket into a Swift Package Manager package, add it to the `dependencies` attribute defined in your `Package.swift` file. You can select the version using the `majorVersion` and `minor` parameters. For example:
 ```
 	dependencies: [
-		.Package(url: "https://github.com/IBM-Swift/BlueSocket.git", majorVersion: <majorVersion>, minor: <minor>)
+		.Package(url: "https://github.com/Kitura/BlueSocket.git", majorVersion: <majorVersion>, minor: <minor>)
 	]
 ```
 
 #### Carthage
 To include BlueSocket in a project using Carthage, add a line to your `Cartfile` with the GitHub organization and project names and version. For example:
 ```
-	github "IBM-Swift/BlueSocket" ~> <majorVersion>.<minor>
+	github "Kitura/BlueSocket" ~> <majorVersion>.<minor>
 ```
 
 #### CocoaPods
@@ -101,7 +117,7 @@ To include BlueSocket in a project using CocoaPods, you just add `BlueSocket` to
 
 ### Before starting
 
-The first you need to do is import the Socket framework.  This is done by the following:
+The first thing you need to do is import the Socket framework.  This is done by the following:
 ```
 import Socket
 ```
@@ -110,16 +126,16 @@ import Socket
 
 **BlueSocket** supports the following families, types and protocols:
 - *Families:*
-	- IPV4:		`Socket.ProtocolFamily.inet`
-	- IPV6:		`Socket.ProtocolFamily.inet6`
-	- UNIX:		`Socket.ProtocolFamily.unix`
+	- IPV4: `Socket.ProtocolFamily.inet`
+	- IPV6: `Socket.ProtocolFamily.inet6`
+	- UNIX: `Socket.ProtocolFamily.unix`
 - *Types:*
-	- Stream:	`Socket.SocketType.stream`
-	- Datagram:	`Socket.SocketType.datagram`
+	- Stream: `Socket.SocketType.stream`
+	- Datagram: `Socket.SocketType.datagram`
 - *Protocols:*
-	- TCP:		`Socket.SocketProtocol.tcp`
-	- UDP:		`Socket.SocketProtocol.udp`
-	- UNIX:		`Socket.SocketProtocol.unix`
+	- TCP: `Socket.SocketProtocol.tcp`
+	- UDP: `Socket.SocketProtocol.udp`
+	- UNIX: `Socket.SocketProtocol.unix`
 
 ### Creating a socket.
 
@@ -145,9 +161,9 @@ To close the socket of an open instance, the following function is provided:
 
 ### Listen on a socket (TCP/UNIX).
 
-To use **BlueSocket** to listen for an connection on a socket the following API is provided:
-- `listen(on port: Int, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG, allowPortReuse: Bool = true)`
-The first parameter `port`, is the port to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.  To allow the reuse of the listening port, set `allowPortReuse` to `true`.  If set to `false`, a error will occur if you attempt to listen on a port already in use.  The `DEFAULT` behavior is to `allow` port reuse.
+To use **BlueSocket** to listen for a connection on a socket the following API is provided:
+- `listen(on port: Int, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG, allowPortReuse: Bool = true, node: String? = nil)`
+The first parameter `port`, is the port to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.  To allow the reuse of the listening port, set `allowPortReuse` to `true`.  If set to `false`, a error will occur if you attempt to listen on a port already in use.  The `DEFAULT` behavior is to `allow` port reuse.  The last parameter, `node`, can be used to listen on a *specific address*.  The value passed is an *optional String* containing the numerical network address (for IPv4, numbers and dots notation, for iPv6, hexidecimal strting).  The `DEFAULT` behavior is to search for an appropriate interface.  If `node` is improperly formatted a **SOCKET_ERR_GETADDRINFO_FAILED** error will be returned.  If `node` is properly formatted but the address specified is not available, a **SOCKET_ERR_BIND_FAILED** will be returned.
 - `listen(on path: String, maxBacklogSize: Int = Socket.SOCKET_DEFAULT_MAX_BACKLOG)`
 This API can only be used with the `.unix` protocol family. The first parameter `path`, is the path to be used to listen on. The second parameter, `maxBacklogSize` allows you to set the size of the queue holding pending connections. The function will determine the appropriate socket configuration based on the `port` specified.  For convenience on macOS, the constant `Socket.SOCKET_MAX_DARWIN_BACKLOG` can be set to use the maximum allowed backlog size.  The default value for all platforms is `Socket.SOCKET_DEFAULT_MAX_BACKLOG`, currently set to *50*. For server use, it may be necessary to increase this value.
 
@@ -169,7 +185,7 @@ When a listening socket detects an incoming connection request, control is retur
 ### Connecting a socket to a server (TCP/UNIX).
 
 In addition to the `create(connectedUsing:)` factory method described above, **BlueSocket** supports three additional instance functions for connecting a `Socket` instance to a server. They are:
-- `connect(to host: String, port: Int32, timeout: UInt = 0)` - This API allows you to connect to a server based on the `hostname` and `port` you provide. Note: an `exception` will be thrown by this function if the value of `port` is not in the range `1-65535`.  Optionally, you can set `timeout` to the number of milliseconds to wait for the connect. Note: If the socket is in blocking mode it will be changed to non-blocking mode *temporarily* if a `timeout` greater than zero (0) is provided. The returned socket will be *set back to its original setting (blocking or non-blocking)*.
+- `connect(to host: String, port: Int32, timeout: UInt = 0)` - This API allows you to connect to a server based on the `hostname` and `port` you provide. Note: an `exception` will be thrown by this function if the value of `port` is not in the range `1-65535`.  Optionally, you can set `timeout` to the number of milliseconds to wait for the connect. Note: If the socket is in blocking mode it will be changed to non-blocking mode *temporarily* if a `timeout` greater than zero (0) is provided. The returned socket will be *set back to its original setting (blocking or non-blocking)*.  If the socket is set to *non-blocking* and **no timeout value is provided**, an exception will be thrown.  Alternatively, you can set the socket to *non-blocking* after successfully connecting.
 - `connect(to path: String)` - This API can only be used with the `.unix` protocol family. It allows you to connect to a server based on the `path` you provide.
 - `connect(using signature: Signature)` - This API allows you specify the connection information by providing a `Socket.Signature` instance containing the information.  Refer to `Socket.Signature` in *Socket.swift* for more information.
 
@@ -225,7 +241,7 @@ The read and write APIs above that use either `NSData` or `NSMutableData` will *
 - `checkStatus(for sockets: [Socket])` - This *class function* allows you to check status of an array of `Socket` instances. Upon completion, a tuple containing two `Socket` arrays is returned. The first array contains the `Socket` instances are that have data available to be read and the second array contains `Socket` instances that can be written to. This API does *not* block. It will check the status of each `Socket` instance and then return the results.
 - `wait(for sockets: [Socket], timeout: UInt, waitForever: Bool = false)` - This *class function* allows for monitoring an array of `Socket` instances, waiting for either a timeout to occur or data to be readable at one of the monitored `Socket` instances. If a timeout of zero (0) is specified, this API will check each socket and return immediately. Otherwise, it will wait until either the timeout expires or data is readable from one or more of the monitored `Socket` instances. If a timeout occurs, this API will return `nil`.  If data is available on one or more of the monitored `Socket` instances, those instances will be returned in an array. If the `waitForever` flag is set to true, the function will wait indefinitely for data to become available *regardless of the timeout value specified*.
 - `createAddress(host: String, port: Int32)` - This *class* function allows for the creation of `Address` enum given a `host` and `port`. On success, this function returns an `Address` or `nil` if the `host` specified doesn't exist.
-- `isReadableOrWritable(waitForever: Bool = false, timeout: UInt = 0)` - This *instance function* allows to determine whether a `Socket` instance is readable and/or writable.  A tuple is returned containing two `Bool` values.  The first, if true, indicates the `Socket` instance has data to read, the second, if true, indicates that the `Socket` instance can be written to. `waitForever` if true, causes this routine to wait until the `Socket` is either readable or writable or an error occurs.  If false, the `timeout` parameter specifies how long to wait.  If a value of zero `(0)` is specified for the timeout value, this function will check the *current* status and *immediately* return. This function returns a tuple containing two booleans, the first `readable` and the second, `writable`.  They are set to true if the `Socket` is either readable or writable repsectively.  If neither is set to true, a timeout has occurred.
+- `isReadableOrWritable(waitForever: Bool = false, timeout: UInt = 0)` - This *instance function* allows to determine whether a `Socket` instance is readable and/or writable.  A tuple is returned containing two `Bool` values.  The first, if true, indicates the `Socket` instance has data to read, the second, if true, indicates that the `Socket` instance can be written to. `waitForever` if true, causes this routine to wait until the `Socket` is either readable or writable or an error occurs.  If false, the `timeout` parameter specifies how long to wait.  If a value of zero `(0)` is specified for the timeout value, this function will check the *current* status and *immediately* return. This function returns a tuple containing two booleans, the first `readable` and the second, `writable`.  They are set to true if the `Socket` is either readable or writable repsectively.  If neither is set to true, a timeout has occurred. **Note:** If you're attempting to write to a newly connected *Socket*, you should ensure that it's *writable* before attempting the operation.
 - `setBlocking(shouldBlock: Bool)` - This *instance function* allows you control whether or not this `Socket` instance should be placed in blocking mode or not. **Note:** All `Socket` instances are, by *default*, created in *blocking mode*.
 - `setReadTimeout(value: UInt = 0)` - This *instance function* allows you to set a timeout for read operations. `value` is a `UInt` the specifies the time for the read operation to wait before returning.  In the event of a timeout, the read operation will return `0` bytes read and `errno` will be set to `EAGAIN`.
 - `setWriteTimeout(value: UInt = 0)` - This *instance function* allows you to set a timeout for write operations. `value` is a `UInt` the specifies the time for the write operation to wait before returning.  In the event of a timeout, the write operation will return `0` bytes written and `errno` will be set to `EAGAIN` for *TCP* and *UNIX* sockets, for *UDP*, the write operation will *succeed* regardless of the timeout value.
@@ -233,7 +249,7 @@ The read and write APIs above that use either `NSData` or `NSMutableData` will *
 
 ### Complete Example
 
-The following example shows how to create a relatively simple multi-threaded echo server using the new `GCD based` **Dispatch** API. What follows is code for a simple echo server that once running, can be accessed via `telnet 127.0.0.1 1337`.
+The following example shows how to create a relatively simple multi-threaded echo server using the new `GCD based` **Dispatch** API. What follows is code for a simple echo server that once running, can be accessed via `telnet ::1 1337`.
 ```swift
 
 import Foundation
@@ -241,203 +257,245 @@ import Socket
 import Dispatch
 
 class EchoServer {
+	
+	static let quitCommand: String = "QUIT"
+	static let shutdownCommand: String = "SHUTDOWN"
+	static let bufferSize = 4096
+	
+	let port: Int
+	var listenSocket: Socket? = nil
+	var continueRunningValue = true
+	var connectedSockets = [Int32: Socket]()
+	let socketLockQueue = DispatchQueue(label: "com.kitura.serverSwift.socketLockQueue")
+	var continueRunning: Bool {
+		set(newValue) {
+			socketLockQueue.sync {
+				self.continueRunningValue = newValue
+			}
+		}
+		get {
+			return socketLockQueue.sync {
+				self.continueRunningValue
+			}
+		}
+	}
 
-    static let quitCommand: String = "QUIT"
-    static let shutdownCommand: String = "SHUTDOWN"
-    static let bufferSize = 4096
+	init(port: Int) {
+		self.port = port
+	}
+	
+	deinit {
+		// Close all open sockets...
+		for socket in connectedSockets.values {
+			socket.close()
+		}
+		self.listenSocket?.close()
+	}
+	
+	func run() {
+		
+		let queue = DispatchQueue.global(qos: .userInteractive)
+		
+		queue.async { [unowned self] in
+			
+			do {
+				// Create an IPV6 socket...
+				try self.listenSocket = Socket.create(family: .inet6)
+				
+				guard let socket = self.listenSocket else {
+					
+					print("Unable to unwrap socket...")
+					return
+				}
+				
+				try socket.listen(on: self.port)
+				
+				print("Listening on port: \(socket.listeningPort)")
+				
+				repeat {
+					let newSocket = try socket.acceptClientConnection()
+					
+					print("Accepted connection from: \(newSocket.remoteHostname) on port \(newSocket.remotePort)")
+					print("Socket Signature: \(String(describing: newSocket.signature?.description))")
+					
+					self.addNewConnection(socket: newSocket)
+					
+				} while self.continueRunning
+				
+			}
+			catch let error {
+				guard let socketError = error as? Socket.Error else {
+					print("Unexpected error...")
+					return
+				}
+				
+				if self.continueRunning {
+					
+					print("Error reported:\n \(socketError.description)")
+					
+				}
+			}
+		}
+		dispatchMain()
+	}
+	
+	func addNewConnection(socket: Socket) {
+		
+		// Add the new socket to the list of connected sockets...
+		socketLockQueue.sync { [unowned self, socket] in
+			self.connectedSockets[socket.socketfd] = socket
+		}
+		
+		// Get the global concurrent queue...
+		let queue = DispatchQueue.global(qos: .default)
+		
+		// Create the run loop work item and dispatch to the default priority global queue...
+		queue.async { [unowned self, socket] in
+			
+			var shouldKeepRunning = true
+			
+			var readData = Data(capacity: EchoServer.bufferSize)
+			
+			do {
+				// Write the welcome string...
+				try socket.write(from: "Hello, type 'QUIT' to end session\nor 'SHUTDOWN' to stop server.\n")
+				
+				repeat {
+					let bytesRead = try socket.read(into: &readData)
+					
+					if bytesRead > 0 {
+						guard let response = String(data: readData, encoding: .utf8) else {
+							
+							print("Error decoding response...")
+							readData.count = 0
+							break
+						}
+						if response.hasPrefix(EchoServer.shutdownCommand) {
+							
+							print("Shutdown requested by connection at \(socket.remoteHostname):\(socket.remotePort)")
+							
+							// Shut things down...
+							self.shutdownServer()
+							
+							return
+						}
+						print("Server received from connection at \(socket.remoteHostname):\(socket.remotePort): \(response) ")
+						let reply = "Server response: \n\(response)\n"
+						try socket.write(from: reply)
+						
+						if (response.uppercased().hasPrefix(EchoServer.quitCommand) || response.uppercased().hasPrefix(EchoServer.shutdownCommand)) &&
+							(!response.hasPrefix(EchoServer.quitCommand) && !response.hasPrefix(EchoServer.shutdownCommand)) {
+							
+							try socket.write(from: "If you want to QUIT or SHUTDOWN, please type the name in all caps. 😃\n")
+						}
+						
+						if response.hasPrefix(EchoServer.quitCommand) || response.hasSuffix(EchoServer.quitCommand) {
+							
+							shouldKeepRunning = false
+						}
+					}
+					
+					if bytesRead == 0 {
+						
+						shouldKeepRunning = false
+						break
+					}
+					
+					readData.count = 0
+					
+				} while shouldKeepRunning
+				
+				print("Socket: \(socket.remoteHostname):\(socket.remotePort) closed...")
+				socket.close()
+				
+				self.socketLockQueue.sync { [unowned self, socket] in
+					self.connectedSockets[socket.socketfd] = nil
+				}
+				
+			}
+			catch let error {
+				guard let socketError = error as? Socket.Error else {
+					print("Unexpected error by connection at \(socket.remoteHostname):\(socket.remotePort)...")
+					return
+				}
+				if self.continueRunning {
+					print("Error reported by connection at \(socket.remoteHostname):\(socket.remotePort):\n \(socketError.description)")
+				}
+			}
+		}
+	}
+	
+	func shutdownServer() {
+		print("\nShutdown in progress...")
 
-    let port: Int
-    var listenSocket: Socket? = nil
-    var continueRunning = true
-    var connectedSockets = [Int32: Socket]()
-    let socketLockQueue = DispatchQueue(label: "com.ibm.serverSwift.socketLockQueue")
-
-    init(port: Int) {
-        self.port = port
-    }
-
-    deinit {
-        // Close all open sockets...
-        for socket in connectedSockets.values {
-            socket.close()
-        }
-        self.listenSocket?.close()
-    }
-
-    func run() {
-
-        let queue = DispatchQueue.global(qos: .userInteractive)
-
-        queue.async { [unowned self] in
-
-            do {
-                // Create an IPV6 socket...
-                try self.listenSocket = Socket.create(family: .inet6)
-
-                guard let socket = self.listenSocket else {
-
-                    print("Unable to unwrap socket...")
-                    return
-                }
-
-                try socket.listen(on: self.port)
-
-                print("Listening on port: \(socket.listeningPort)")
-
-                repeat {
-                    let newSocket = try socket.acceptClientConnection()
-
-                    print("Accepted connection from: \(newSocket.remoteHostname) on port \(newSocket.remotePort)")
-                    print("Socket Signature: \(newSocket.signature?.description)")
-
-                    self.addNewConnection(socket: newSocket)
-
-                } while self.continueRunning
-
-            }
-            catch let error {
-                guard let socketError = error as? Socket.Error else {
-                    print("Unexpected error...")
-                    return
-                }
-
-                if self.continueRunning {
-
-                    print("Error reported:\n \(socketError.description)")
-
-                }
-            }
-        }
-        dispatchMain()
-    }
-
-    func addNewConnection(socket: Socket) {
-
-        // Add the new socket to the list of connected sockets...
-        socketLockQueue.sync { [unowned self, socket] in
-            self.connectedSockets[socket.socketfd] = socket
-        }
-
-        // Get the global concurrent queue...
-        let queue = DispatchQueue.global(qos: .default)
-
-        // Create the run loop work item and dispatch to the default priority global queue...
-        queue.async { [unowned self, socket] in
-
-            var shouldKeepRunning = true
-
-            var readData = Data(capacity: EchoServer.bufferSize)
-
-            do {
-                // Write the welcome string...
-                try socket.write(from: "Hello, type 'QUIT' to end session\nor 'SHUTDOWN' to stop server.\n")
-
-                repeat {
-                    let bytesRead = try socket.read(into: &readData)
-
-                    if bytesRead > 0 {
-                        guard let response = String(data: readData, encoding: .utf8) else {
-
-                            print("Error decoding response...")
-                            readData.count = 0
-                            break
-                        }
-                        if response.hasPrefix(EchoServer.shutdownCommand) {
-
-                            print("Shutdown requested by connection at \(socket.remoteHostname):\(socket.remotePort)")
-
-                            // Shut things down...
-                            self.shutdownServer()
-
-                            return
-                        }
-                        print("Server received from connection at \(socket.remoteHostname):\(socket.remotePort): \(response) ")
-                        let reply = "Server response: \n\(response)\n"
-                        try socket.write(from: reply)
-
-                        if (response.uppercased().hasPrefix(EchoServer.quitCommand) || response.uppercased().hasPrefix(EchoServer.shutdownCommand)) &&
-                            (!response.hasPrefix(EchoServer.quitCommand) && !response.hasPrefix(EchoServer.shutdownCommand)) {
-
-                            try socket.write(from: "If you want to QUIT or SHUTDOWN, please type the name in all caps. 😃\n")
-                        }
-
-                        if response.hasPrefix(EchoServer.quitCommand) || response.hasSuffix(EchoServer.quitCommand) {
-
-                            shouldKeepRunning = false
-                        }
-                    }
-
-                    if bytesRead == 0 {
-
-                        shouldKeepRunning = false
-                        break
-                    }
-
-                    readData.count = 0
-
-                } while shouldKeepRunning
-
-                print("Socket: \(socket.remoteHostname):\(socket.remotePort) closed...")
-                socket.close()
-
-                self.socketLockQueue.sync { [unowned self, socket] in
-                    self.connectedSockets[socket.socketfd] = nil
-                }
-
-            }
-            catch let error {
-                guard let socketError = error as? Socket.Error else {
-                    print("Unexpected error by connection at \(socket.remoteHostname):\(socket.remotePort)...")
-                    return
-                }
-                if self.continueRunning {
-                    print("Error reported by connection at \(socket.remoteHostname):\(socket.remotePort):\n \(socketError.description)")
-                }
-            }
-        }
-    }
-
-    func shutdownServer() {
-        print("\nShutdown in progress...")
-        continueRunning = false
-
-        // Close all open sockets...
-        for socket in connectedSockets.values {
-            socket.close()
-        }
-
-        listenSocket?.close()
-
-        DispatchQueue.main.sync {
-            exit(0)
-        }
-    }
+		self.continueRunning = false
+		
+		// Close all open sockets...
+		for socket in connectedSockets.values {
+			
+			self.socketLockQueue.sync { [unowned self, socket] in
+				self.connectedSockets[socket.socketfd] = nil
+				socket.close()
+			}
+		}
+		
+		DispatchQueue.main.sync {
+			exit(0)
+		}
+	}
 }
 
 let port = 1337
 let server = EchoServer(port: port)
 print("Swift Echo Server Sample")
-print("Connect with a command line window by entering 'telnet 127.0.0.1 \(port)'")
+print("Connect with a command line window by entering 'telnet ::1 \(port)'")
 
 server.run()
 ```
-This server can be built by specifying the following `Package.swift` file.
+This server can be built by specifying the following `Package.swift` file using Swift 4.
 ```swift
 import PackageDescription
 
 let package = Package(
-    name: "EchoServer",
+	name: "EchoServer",
 	dependencies: [
-		.Package(url: "https://github.com/IBM-Swift/BlueSocket.git", majorVersion: 0, minor: 10),
-		],
+		.package(url: "https://github.com/Kitura/BlueSocket.git", from:"1.0.8"),
+	],
+	targets: [
+	.target(
+		name: "EchoServer",
+		dependencies: [
+			"Socket"
+		]),
+	]
+)
+```
+Or if you are still using Swift 3, by specifying the following `Package.swift` file.
+```swift
+import PackageDescription
+
+let package = Package(
+	name: "EchoServer",
+	dependencies: [
+	.Package(url: "https://github.com/Kitura/BlueSocket.git", majorVersion: 1, minor: 0),
+	],
 	exclude: ["EchoServer.xcodeproj"]
 )
 ```
+
 The following command sequence will build and run the echo server on Linux.  If running on macOS or with any toolchain **NEWER** than the 8/18 toolchain, you can omit the `-Xcc -fblocks` switch as it's no longer needed.
 ```
 $ swift build -Xcc -fblocks
 $ .build/debug/EchoServer
 Swift Echo Server Sample
-Connect with a command line window by entering 'telnet 127.0.0.1 1337'
+Connect with a command line window by entering 'telnet ::1 1337'
 Listening on port: 1337
 ```
+
+## Community
+
+We love to talk server-side Swift and Kitura. Join our [Slack](http://swift-at-ibm-slack.mybluemix.net/) to meet the team!
+
+## License
+
+This library is licensed under Apache 2.0. Full license text is available in [LICENSE](https://github.com/Kitura/BlueSocket/blob/master/LICENSE).

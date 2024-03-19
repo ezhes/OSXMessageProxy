@@ -17,23 +17,31 @@ extension DatabaseValueConvertible where Self: ReferenceConvertible, Self.Refere
     
     /// Returns a value that can be stored in the database.
     public var databaseValue: DatabaseValue {
-        return (self as! ReferenceType).databaseValue
+        (self as! ReferenceType).databaseValue
     }
     
     /// Returns a value initialized from *dbValue*, if possible.
     public static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Self? {
-        return ReferenceType.fromDatabaseValue(dbValue).flatMap { cast($0) }
+        ReferenceType.fromDatabaseValue(dbValue).flatMap { cast($0) }
     }
 }
 
-public extension DatabaseValueConvertible where Self: Decodable & ReferenceConvertible, Self.ReferenceType: DatabaseValueConvertible {
+extension DatabaseValueConvertible
+where
+    Self: Decodable & ReferenceConvertible,
+    Self.ReferenceType: DatabaseValueConvertible
+{
     public static func fromDatabaseValue(_ databaseValue: DatabaseValue) -> Self? {
         // Preserve custom database decoding
         return ReferenceType.fromDatabaseValue(databaseValue).flatMap { cast($0) }
     }
 }
 
-public extension DatabaseValueConvertible where Self: Encodable & ReferenceConvertible, Self.ReferenceType: DatabaseValueConvertible {
+extension DatabaseValueConvertible
+where
+    Self: Encodable & ReferenceConvertible,
+    Self.ReferenceType: DatabaseValueConvertible
+{
     public var databaseValue: DatabaseValue {
         // Preserve custom database encoding
         return (self as! ReferenceType).databaseValue
